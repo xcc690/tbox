@@ -100,6 +100,81 @@ QTabBar::tab:selected {
     color: #409EFF;
     border-bottom-color: white;
 }
+
+QScrollBar:vertical {
+    background: #F5F7FA;
+    width: 10px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #C0C4CC;
+    min-height: 30px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #A0A4AC;
+}
+
+QScrollBar::add-line:vertical, 
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+/* 环境选择框美化 */
+QComboBox {
+    border: 1px solid #DCDFE6;
+    border-radius: 6px;
+    padding: 6px 12px;
+    min-width: 120px;
+    background: white;
+    selection-background-color: #409EFF;
+}
+
+QComboBox:hover {
+    border-color: #C0C4CC;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 24px;
+    border-left: 1px solid #DCDFE6;
+    border-radius: 0 6px 6px 0;
+}
+
+QComboBox::down-arrow {
+    image: url(icons/arrow_down.png);
+    width: 12px;
+    height: 12px;
+}
+
+QComboBox QAbstractItemView {
+    border: 1px solid #E4E7ED;
+    border-radius: 6px;
+    background: white;
+    padding: 4px;
+    outline: 0px;
+    selection-background-color: #409EFF;
+    selection-color: white;
+    margin: 2px 0; /* 防止下拉菜单紧贴边框 */
+}
+
+QComboBox QAbstractItemView::item {
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 4px;
+}
+
+QComboBox QAbstractItemView::item:hover {
+    background-color: #F5F7FA;
+}
 """
 
 def resource_path(relative_path):
