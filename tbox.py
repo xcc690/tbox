@@ -178,13 +178,20 @@ QMessageBox QLabel {
 }
 """
 
+# 打包后资源路径处理
+def resource_path(relative_path):
+    """ 获取资源的绝对路径 """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 class ToolManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Tool Manager Pro")
         self.setGeometry(200, 200, 1200, 800)
         self.setStyleSheet(STYLE_SHEET)
-        self.setWindowIcon(QIcon("icon.png"))
+        self.setWindowIcon(QIcon(resource_path("icon.png")))
         
         # 初始化数据
         self.environments = []
@@ -313,6 +320,7 @@ class ToolManagerApp(QMainWindow):
             }}
         """)
         if icon_path:
+            icon_path = resource_path(f"icons/{icon_path}")
             btn.setIcon(QIcon(icon_path))
             btn.setIconSize(QSize(16, 16))
         return btn
