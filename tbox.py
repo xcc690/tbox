@@ -20,13 +20,44 @@ CONFIG_FILE = "tool_manager_config.json"
 
 STYLE_SHEET = """
 /* 现代炫酷设计 */
-QWidget {
+QWidget, QMainWindow {
     background-color: #1E1E2E;
     color: #CDD6F4;
     font-family: 'Microsoft YaHei';
     font-size: 14px;
     border: none;
     outline: none;
+}
+
+/* 窗口控制按钮样式 */
+QMainWindow::title {
+    background-color: #1E1E2E;
+    color: #CDD6F4;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #45475A;
+}
+
+QMainWindow::closeButton {
+    background-color: #F38BA8;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+QMainWindow::closeButton:hover {
+    background-color: #F38BA8;
+    opacity: 0.8;
+}
+
+QMainWindow::minimizeButton, QMainWindow::maximizeButton {
+    background-color: #89B4FA;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+QMainWindow::minimizeButton:hover, QMainWindow::maximizeButton:hover {
+    background-color: #89B4FA;
+    opacity: 0.8;
 }
 
 QListWidget {
@@ -142,7 +173,8 @@ QComboBox {
     border-radius: 6px;
     padding: 6px 12px;
     min-width: 120px;
-    background: white;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ECC71, stop:1 #27AE60);
+    color: #FFFFFF;
     selection-background-color: #409EFF;
 }
 
@@ -167,11 +199,12 @@ QComboBox::down-arrow {
 QComboBox QAbstractItemView {
     border: 1px solid #E4E7ED;
     border-radius: 6px;
-    background: white;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ECC71, stop:1 #27AE60);
     padding: 4px;
     outline: 0px;
     selection-background-color: #409EFF;
     selection-color: white;
+    color: #FFFFFF;
     margin: 2px 0; /* 防止下拉菜单紧贴边框 */
 }
 
@@ -179,6 +212,7 @@ QComboBox QAbstractItemView::item {
     height: 30px;
     padding: 0 8px;
     border-radius: 4px;
+    color: #CDD6F4;
 }
 
 QComboBox QAbstractItemView::item:hover {
