@@ -5,130 +5,128 @@ import subprocess
 import win32com.client
 from PyQt5.QtCore import (
     Qt, QSize, QPropertyAnimation, 
-    QEasingCurve, QModelIndex
+    QEasingCurve, QModelIndex, QPoint
 )
-from PyQt5.QtGui import QFont, QIcon, QColor, QBrush
+from PyQt5.QtGui import QFont, QIcon, QColor, QBrush, QMouseEvent
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QPushButton,
     QListWidget, QFileDialog, QInputDialog,
     QSplitter, QTabWidget, QLabel, QMessageBox,
-    QMenu, QAction, QLineEdit, QListWidgetItem
+    QMenu, QAction, QLineEdit, QListWidgetItem,
+    QFrame, QGraphicsDropShadowEffect
 )
 
 CONFIG_FILE = "tool_manager_config.json"
 
 STYLE_SHEET = """
-/* 现代炫酷设计 */
+/* 纯白透明设计 */
 QWidget, QMainWindow {
-    background-color: #1E1E2E;
-    color: #CDD6F4;
+    background-color: rgba(255, 255, 255, 240);
+    color: #333333;
     font-family: 'Microsoft YaHei';
     font-size: 14px;
     border: none;
     outline: none;
 }
 
-/* 窗口控制按钮样式 */
-QMainWindow::title {
-    background-color: #1E1E2E;
-    color: #CDD6F4;
-    font-size: 12px;
-    padding: 4px 8px;
-    border-bottom: 1px solid #45475A;
+QMainWindow {
+    background-color: rgba(255, 255, 255, 200);
 }
 
-QMainWindow::closeButton {
-    background-color: #F38BA8;
-    border-radius: 4px;
-    padding: 4px;
+/* 自定义标题栏样式 */
+#titleBar {
+    background-color: rgba(255, 255, 255, 200);
+    border-bottom: 1px solid rgba(200, 200, 200, 100);
+    height: 40px;
 }
 
-QMainWindow::closeButton:hover {
-    background-color: #F38BA8;
-    opacity: 0.8;
+#titleLabel {
+    color: #333333;
+    font-size: 14px;
+    font-weight: bold;
 }
 
-QMainWindow::minimizeButton, QMainWindow::maximizeButton {
-    background-color: #89B4FA;
-    border-radius: 4px;
-    padding: 4px;
+#closeButton, #minimizeButton, #maximizeButton {
+    background-color: transparent;
+    border: none;
+    padding: 6px;
+    border-radius: 3px;
 }
 
-QMainWindow::minimizeButton:hover, QMainWindow::maximizeButton:hover {
-    background-color: #89B4FA;
-    opacity: 0.8;
+#closeButton:hover {
+    background-color: rgba(232, 17, 35, 200);
+    color: white;
+}
+
+#minimizeButton:hover, #maximizeButton:hover {
+    background-color: rgba(230, 230, 230, 200);
 }
 
 QListWidget {
-    background-color: #313244;
-    border: 1px solid #45475A;
-    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 200);
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
     padding: 5px;
     margin: 5px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    alternate-background-color: #45475A;
+    alternate-background-color: rgba(245, 245, 245, 200);
 }
 
 QListWidget::item {
     height: 40px;
     padding: 8px 12px;
-    border-bottom: 1px solid #45475A;
-    transition: background-color 0.2s ease;
+    border-bottom: 1px solid rgba(200, 200, 200, 60);
 }
 
 QListWidget::item:hover {
-    background-color: #585B70;
-    border-radius: 8px;
-    transform: translateY(-1px);
+    background-color: rgba(240, 240, 240, 200);
+    border-radius: 4px;
 }
 
 QListWidget::item:selected {
-    background-color: #89B4FA;
-    color: #1E1E2E;
-    border-radius: 8px;
+    background-color: rgba(200, 220, 240, 200);
+    color: #333333;
+    border-radius: 4px;
     font-weight: bold;
 }
 
 QPushButton {
-    background-color: #313244;
-    border: 1px solid #45475A;
-    border-radius: 8px;
+    background-color: rgba(240, 240, 240, 200);
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
     padding: 8px 16px;
     min-width: 80px;
-    color: #CDD6F4;
-    transition: all 0.2s ease;
+    color: #333333;
 }
 
 QPushButton:hover {
-    background-color: #89B4FA;
-    color: #1E1E2E;
-    border-color: #89B4FA;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(137, 180, 250, 0.2);
+    background-color: rgba(220, 220, 220, 230);
+    border-color: rgba(180, 180, 180, 150);
 }
 
 QLineEdit {
-    border: 1px solid #DCDFE6;
+    border: 1px solid rgba(200, 200, 200, 100);
     border-radius: 6px;
     padding: 8px;
     font-size: 14px;
     margin: 10px 0;
+    background-color: rgba(255, 255, 255, 200);
 }
 
 QLineEdit:focus {
-    border-color: #409EFF;
+    border-color: rgba(100, 150, 255, 180);
 }
 
 QTabWidget::pane {
-    border: 1px solid #E4E7ED;
-    border-radius: 8px;
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
+    background-color: rgba(255, 255, 255, 200);
 }
 
 QTabBar::tab {
-    background: #F5F7FA;
-    border: 1px solid #E4E7ED;
-    color: #909399;
+    background: rgba(240, 240, 240, 200);
+    border: 1px solid rgba(200, 200, 200, 100);
+    color: #333333;
     padding: 8px 20px;
     margin-right: 4px;
     border-top-left-radius: 6px;
@@ -136,25 +134,25 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected {
-    background: white;
-    color: #409EFF;
-    border-bottom-color: white;
+    background: rgba(255, 255, 255, 220);
+    color: rgba(70, 130, 220, 250);
+    border-bottom-color: rgba(255, 255, 255, 220);
 }
 
 QScrollBar:vertical {
-    background: #F5F7FA;
+    background: rgba(240, 240, 240, 100);
     width: 10px;
     margin: 0px;
 }
 
 QScrollBar::handle:vertical {
-    background: #C0C4CC;
+    background: rgba(180, 180, 180, 150);
     min-height: 30px;
-    border-radius: 4px;
+    border-radius: 5px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #A0A4AC;
+    background: rgba(160, 160, 160, 180);
 }
 
 QScrollBar::add-line:vertical, 
@@ -169,54 +167,68 @@ QScrollBar::sub-page:vertical {
 
 /* 环境选择框美化 */
 QComboBox {
-    border: 1px solid #DCDFE6;
+    border: 1px solid rgba(200, 200, 200, 100);
     border-radius: 6px;
     padding: 6px 12px;
     min-width: 120px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ECC71, stop:1 #27AE60);
-    color: #FFFFFF;
-    selection-background-color: #409EFF;
+    background: rgba(255, 255, 255, 200);
+    color: #333333;
 }
 
 QComboBox:hover {
-    border-color: #C0C4CC;
+    border-color: rgba(180, 180, 180, 150);
 }
 
 QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: right center;
     width: 24px;
-    border-left: 1px solid #DCDFE6;
+    border-left: 1px solid rgba(200, 200, 200, 100);
     border-radius: 0 6px 6px 0;
 }
 
-QComboBox::down-arrow {
-    image: url(icons/arrow_down.png);
-    width: 12px;
-    height: 12px;
-}
-
 QComboBox QAbstractItemView {
-    border: 1px solid #E4E7ED;
+    border: 1px solid rgba(200, 200, 200, 100);
     border-radius: 6px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ECC71, stop:1 #27AE60);
+    background: rgba(255, 255, 255, 220);
     padding: 4px;
     outline: 0px;
-    selection-background-color: #409EFF;
-    selection-color: white;
-    color: #FFFFFF;
-    margin: 2px 0; /* 防止下拉菜单紧贴边框 */
+    selection-background-color: rgba(200, 220, 240, 200);
+    selection-color: #333333;
+    color: #333333;
+    margin: 2px 0;
 }
 
 QComboBox QAbstractItemView::item {
     height: 30px;
     padding: 0 8px;
     border-radius: 4px;
-    color: #CDD6F4;
 }
 
 QComboBox QAbstractItemView::item:hover {
-    background-color: #F5F7FA;
+    background-color: rgba(240, 240, 240, 200);
+}
+
+QMenu {
+    background-color: rgba(255, 255, 255, 240);
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
+}
+
+QMenu::item {
+    padding: 6px 24px 6px 20px;
+    border: 1px solid transparent;
+}
+
+QMenu::item:selected {
+    background-color: rgba(200, 220, 240, 200);
+    color: #333333;
+    border-radius: 4px;
+}
+
+#appContainer {
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 200);
 }
 """
 
@@ -226,13 +238,113 @@ def resource_path(relative_path):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
+class TitleBar(QFrame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.setObjectName("titleBar")
+        self.setFixedHeight(40)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 10, 0)
+        
+        # 应用图标
+        self.iconLabel = QLabel()
+        self.iconLabel.setFixedSize(20, 20)
+        icon = QIcon(resource_path("icon.png"))
+        pixmap = icon.pixmap(20, 20)
+        self.iconLabel.setPixmap(pixmap)
+        
+        # 标题
+        self.titleLabel = QLabel("TBox")
+        self.titleLabel.setObjectName("titleLabel")
+        
+        # 窗口控制按钮
+        self.minimizeButton = QPushButton("—")
+        self.minimizeButton.setObjectName("minimizeButton")
+        self.minimizeButton.setFixedSize(30, 30)
+        
+        self.maximizeButton = QPushButton("□")
+        self.maximizeButton.setObjectName("maximizeButton")
+        self.maximizeButton.setFixedSize(30, 30)
+        
+        self.closeButton = QPushButton("✕")
+        self.closeButton.setObjectName("closeButton")
+        self.closeButton.setFixedSize(30, 30)
+        
+        layout.addWidget(self.iconLabel)
+        layout.addWidget(self.titleLabel)
+        layout.addStretch()
+        layout.addWidget(self.minimizeButton)
+        layout.addWidget(self.maximizeButton)
+        layout.addWidget(self.closeButton)
+        
+        # 设置按钮事件
+        self.minimizeButton.clicked.connect(self.parent.showMinimized)
+        self.maximizeButton.clicked.connect(self.toggleMaximize)
+        self.closeButton.clicked.connect(self.parent.close)
+        
+        self.start = None
+        
+    def toggleMaximize(self):
+        if self.parent.isMaximized():
+            self.parent.showNormal()
+        else:
+            self.parent.showMaximized()
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.start = event.pos()
+        return super().mousePressEvent(event)
+        
+    def mouseMoveEvent(self, event):
+        if self.start and event.buttons() == Qt.LeftButton:
+            self.parent.move(self.parent.pos() + event.pos() - self.start)
+        return super().mouseMoveEvent(event)
+    
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.toggleMaximize()
+        return super().mouseDoubleClickEvent(event)
+
 class ToolManagerApp(QMainWindow):
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Tool Manager Pro")
+        super().__init__(None, Qt.FramelessWindowHint)
+        self.setWindowTitle("TBox")
         self.setGeometry(200, 200, 1200, 800)
+        
+        # 创建阴影效果
+        self.shadow = QGraphicsDropShadowEffect(self)
+        self.shadow.setBlurRadius(20)
+        self.shadow.setColor(QColor(0, 0, 0, 60))
+        self.shadow.setOffset(0, 0)
+        
+        # 创建容器部件，应用阴影效果
+        self.container = QWidget(self)
+        self.container.setObjectName("appContainer")
+        self.container.setGraphicsEffect(self.shadow)
+        
+        # 设置主布局
+        self.container_layout = QVBoxLayout(self.container)
+        self.container_layout.setContentsMargins(0, 0, 0, 0)
+        self.container_layout.setSpacing(0)
+        
+        # 添加自定义标题栏
+        self.title_bar = TitleBar(self)
+        self.container_layout.addWidget(self.title_bar)
+        
+        # 主内容区域
+        self.main_content = QWidget()
+        self.main_layout = QVBoxLayout(self.main_content)
+        self.container_layout.addWidget(self.main_content)
+        
+        # 设置容器为中央部件
+        self.setCentralWidget(self.container)
+        
+        # 设置样式表
         self.setStyleSheet(STYLE_SHEET)
-        self.setWindowIcon(QIcon(resource_path("icon.png")))
+        
+        self.setAttribute(Qt.WA_TranslucentBackground)
         
         self.environments = []
         self.categories = {}
@@ -245,6 +357,15 @@ class ToolManagerApp(QMainWindow):
         self.setup_connections()
         self.fade_in_animation()
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragPos = event.globalPos()
+            
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and not self.isMaximized():
+            self.move(self.pos() + event.globalPos() - self.dragPos)
+            self.dragPos = event.globalPos()
+            
     def fade_in_animation(self):
         self.anim = QPropertyAnimation(self, b"windowOpacity")
         self.anim.setDuration(300)
@@ -254,18 +375,13 @@ class ToolManagerApp(QMainWindow):
         self.anim.start()
 
     def init_ui(self):
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout()
-        main_widget.setLayout(main_layout)
-        
         # 搜索框
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("全局搜索工具（支持模糊匹配）...")
-        main_layout.addWidget(self.search_input)
+        self.main_layout.addWidget(self.search_input)
         
         splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter)
+        self.main_layout.addWidget(splitter)
         
         # 左侧分类面板
         left_panel = QWidget()
@@ -301,8 +417,8 @@ class ToolManagerApp(QMainWindow):
         tool_layout.addWidget(self.tool_list)
         
         tool_btn_layout = QHBoxLayout()
-        self.add_tool_btn = self.create_icon_button("添加工具", "#409EFF", "tool.png")
-        self.del_tool_btn = self.create_icon_button("删除工具", "#F56C6C", "delete.png")
+        self.add_tool_btn = self.create_icon_button("添加工具", "rgba(70, 130, 220, 200)", "tool.png")
+        self.del_tool_btn = self.create_icon_button("删除工具", "rgba(220, 70, 70, 200)", "delete.png")
         tool_btn_layout.addWidget(self.add_tool_btn)
         tool_btn_layout.addWidget(self.del_tool_btn)
         tool_layout.addLayout(tool_btn_layout)
@@ -316,8 +432,8 @@ class ToolManagerApp(QMainWindow):
         shortcut_layout.addWidget(self.shortcut_list)
         
         sc_btn_layout = QHBoxLayout()
-        self.add_sc_btn = self.create_icon_button("添加快捷方式", "#409EFF", "shortcut.png")
-        self.del_sc_btn = self.create_icon_button("删除快捷方式", "#F56C6C", "delete.png")
+        self.add_sc_btn = self.create_icon_button("添加快捷方式", "rgba(70, 130, 220, 200)", "shortcut.png")
+        self.del_sc_btn = self.create_icon_button("删除快捷方式", "rgba(220, 70, 70, 200)", "delete.png")
         sc_btn_layout.addWidget(self.add_sc_btn)
         sc_btn_layout.addWidget(self.del_sc_btn)
         shortcut_layout.addLayout(sc_btn_layout)
@@ -331,8 +447,8 @@ class ToolManagerApp(QMainWindow):
         env_layout.addWidget(self.env_list)
         
         env_btn_layout = QHBoxLayout()
-        self.add_env_btn = self.create_icon_button("添加环境", "#409EFF", "environment.png")
-        self.del_env_btn = self.create_icon_button("删除环境", "#F56C6C", "delete.png")
+        self.add_env_btn = self.create_icon_button("添加环境", "rgba(70, 130, 220, 200)", "environment.png")
+        self.del_env_btn = self.create_icon_button("删除环境", "rgba(220, 70, 70, 200)", "delete.png")
         env_btn_layout.addWidget(self.add_env_btn)
         env_btn_layout.addWidget(self.del_env_btn)
         env_layout.addLayout(env_btn_layout)
@@ -358,7 +474,8 @@ class ToolManagerApp(QMainWindow):
                 padding: 8px 16px;
             }}
             QPushButton:hover {{ 
-                background-color: {QColor(color).darker(115).name()};
+                background-color: {color};
+                opacity: 0.8;
             }}
         """)
         icon_path = resource_path(f"icons/{icon_name}")
