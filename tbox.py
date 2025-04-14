@@ -3,92 +3,226 @@ import os
 import json
 import subprocess
 import win32com.client
+import winreg
+import logging
+import keyboard
 from PyQt5.QtCore import (
     Qt, QSize, QPropertyAnimation, 
-    QEasingCurve, QModelIndex
+    QEasingCurve, QModelIndex, QPoint,
+    QSettings, QTimer, QAbstractNativeEventFilter
 )
-from PyQt5.QtGui import QFont, QIcon, QColor, QBrush
+from PyQt5.QtGui import QFont, QIcon, QColor, QBrush, QMouseEvent, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QPushButton,
     QListWidget, QFileDialog, QInputDialog,
     QSplitter, QTabWidget, QLabel, QMessageBox,
-    QMenu, QAction, QLineEdit, QListWidgetItem
+    QMenu, QAction, QLineEdit, QListWidgetItem,
+    QFrame, QGraphicsDropShadowEffect, QDialog,
+    QCheckBox, QKeySequenceEdit, QGroupBox,
+    QFormLayout, QComboBox, QSystemTrayIcon,
+    QShortcut
 )
+from PyQt5.QtNetwork import QLocalSocket, QLocalServer
+import win32con
+import win32api
+import win32gui
+import ctypes
+from ctypes import wintypes
 
 CONFIG_FILE = "tool_manager_config.json"
 
 STYLE_SHEET = """
-/* 现代扁平化设计 */
-QWidget {
-    background-color: #F5F7FA;
-    color: #2D3A4B;
+/* 纯白透明设计 */
+QWidget, QMainWindow {
+    background-color: rgba(255, 255, 255, 240);
+    color: #333333;
     font-family: 'Microsoft YaHei';
     font-size: 14px;
     border: none;
     outline: none;
 }
 
-QListWidget {
-    background-color: #FFFFFF;
-    border: 1px solid #E4E7ED;
-    border-radius: 8px;
+QMainWindow {
+    background-color: rgba(255, 255, 255, 200);
+}
+
+/* 设置对话框样式 */
+QDialog {
+    background-color: rgba(255, 255, 255, 240);
+}
+
+QGroupBox {
+    background-color: rgba(255, 255, 255, 200);
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
+    margin-top: 15px;
+    padding-top: 15px;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 5px;
+}
+
+QFormLayout {
+    margin: 0;
+    spacing: 15px;
+}
+
+QFormLayout QLabel {
+    min-width: 120px;
+}
+
+QPushButton {
+    background-color: rgba(70, 130, 220, 200);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background-color: rgba(70, 130, 220, 250);
+}
+
+QPushButton:pressed {
+    background-color: rgba(50, 110, 200, 250);
+}
+
+QKeySequenceEdit {
+    min-width: 200px;
+    height: 30px;
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
     padding: 5px;
+}
+
+QCheckBox {
+    spacing: 5px;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+}
+
+QCheckBox::indicator:unchecked {
+    border: 1px solid rgba(200, 200, 200, 100);
+    background-color: white;
+    border-radius: 3px;
+}
+
+QCheckBox::indicator:checked {
+    border: 1px solid rgba(70, 130, 220, 200);
+    background-color: rgba(70, 130, 220, 200);
+    border-radius: 3px;
+}
+
+/* 自定义标题栏样式 */
+#titleBar {
+    background-color: rgba(255, 255, 255, 200);
+    border-bottom: 1px solid rgba(200, 200, 200, 100);
+    height: 40px;
+}
+
+#titleLabel {
+    color: #333333;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#settingsButton, #minimizeButton, #maximizeButton {
+    background-color: transparent;
+    color: #666666;
+    border: none;
+    padding: 6px;
+    border-radius: 3px;
+    min-width: 30px;
+    min-height: 30px;
+}
+
+#settingsButton:hover, #minimizeButton:hover, #maximizeButton:hover {
+    background-color: rgba(230, 230, 230, 200);
+}
+
+#settingsButton:pressed, #minimizeButton:pressed, #maximizeButton:pressed {
+    background-color: rgba(220, 220, 220, 200);
+}
+
+#closeButton {
+    background-color: transparent;
+    color: #666666;
+    border: none;
+    padding: 6px;
+    border-radius: 3px;
+    min-width: 30px;
+    min-height: 30px;
+}
+
+#closeButton:hover {
+    background-color: rgba(232, 17, 35, 200);
+    color: white;
+}
+
+#closeButton:pressed {
+    background-color: rgba(200, 15, 30, 250);
+}
+
+QListWidget {
+    background-color: rgba(255, 255, 255, 200);
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
+    padding: 5px;
+    margin: 5px;
+    alternate-background-color: rgba(245, 245, 245, 200);
 }
 
 QListWidget::item {
     height: 40px;
     padding: 8px 12px;
-    border-bottom: 1px solid #EBEEF5;
+    border-bottom: 1px solid rgba(200, 200, 200, 60);
 }
 
 QListWidget::item:hover {
-    background-color: #F5F7FA;
-    border-radius: 6px;
+    background-color: rgba(240, 240, 240, 200);
+    border-radius: 4px;
 }
 
 QListWidget::item:selected {
-    background-color: #409EFF;
-    color: white;
-    border-radius: 6px;
-}
-
-QPushButton {
-    background-color: #FFFFFF;
-    border: 1px solid #DCDFE6;
-    border-radius: 6px;
-    padding: 8px 16px;
-    min-width: 80px;
-    color: #606266;
-}
-
-QPushButton:hover {
-    background-color: #409EFF;
-    color: white;
-    border-color: #409EFF;
+    background-color: rgba(200, 220, 240, 200);
+    color: #333333;
+    border-radius: 4px;
+    font-weight: bold;
 }
 
 QLineEdit {
-    border: 1px solid #DCDFE6;
+    border: 1px solid rgba(200, 200, 200, 100);
     border-radius: 6px;
     padding: 8px;
     font-size: 14px;
     margin: 10px 0;
+    background-color: rgba(255, 255, 255, 200);
 }
 
 QLineEdit:focus {
-    border-color: #409EFF;
+    border-color: rgba(100, 150, 255, 180);
 }
 
 QTabWidget::pane {
-    border: 1px solid #E4E7ED;
-    border-radius: 8px;
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
+    background-color: rgba(255, 255, 255, 200);
 }
 
 QTabBar::tab {
-    background: #F5F7FA;
-    border: 1px solid #E4E7ED;
-    color: #909399;
+    background: rgba(240, 240, 240, 200);
+    border: 1px solid rgba(200, 200, 200, 100);
+    color: #333333;
     padding: 8px 20px;
     margin-right: 4px;
     border-top-left-radius: 6px;
@@ -96,25 +230,25 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected {
-    background: white;
-    color: #409EFF;
-    border-bottom-color: white;
+    background: rgba(255, 255, 255, 220);
+    color: rgba(70, 130, 220, 250);
+    border-bottom-color: rgba(255, 255, 255, 220);
 }
 
 QScrollBar:vertical {
-    background: #F5F7FA;
+    background: rgba(240, 240, 240, 100);
     width: 10px;
     margin: 0px;
 }
 
 QScrollBar::handle:vertical {
-    background: #C0C4CC;
+    background: rgba(180, 180, 180, 150);
     min-height: 30px;
-    border-radius: 4px;
+    border-radius: 5px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #A0A4AC;
+    background: rgba(160, 160, 160, 180);
 }
 
 QScrollBar::add-line:vertical, 
@@ -129,41 +263,36 @@ QScrollBar::sub-page:vertical {
 
 /* 环境选择框美化 */
 QComboBox {
-    border: 1px solid #DCDFE6;
+    border: 1px solid rgba(200, 200, 200, 100);
     border-radius: 6px;
     padding: 6px 12px;
     min-width: 120px;
-    background: white;
-    selection-background-color: #409EFF;
+    background: rgba(255, 255, 255, 200);
+    color: #333333;
 }
 
 QComboBox:hover {
-    border-color: #C0C4CC;
+    border-color: rgba(180, 180, 180, 150);
 }
 
 QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: right center;
     width: 24px;
-    border-left: 1px solid #DCDFE6;
+    border-left: 1px solid rgba(200, 200, 200, 100);
     border-radius: 0 6px 6px 0;
 }
 
-QComboBox::down-arrow {
-    image: url(icons/arrow_down.png);
-    width: 12px;
-    height: 12px;
-}
-
 QComboBox QAbstractItemView {
-    border: 1px solid #E4E7ED;
+    border: 1px solid rgba(200, 200, 200, 100);
     border-radius: 6px;
-    background: white;
+    background: rgba(255, 255, 255, 220);
     padding: 4px;
     outline: 0px;
-    selection-background-color: #409EFF;
-    selection-color: white;
-    margin: 2px 0; /* 防止下拉菜单紧贴边框 */
+    selection-background-color: rgba(200, 220, 240, 200);
+    selection-color: #333333;
+    color: #333333;
+    margin: 2px 0;
 }
 
 QComboBox QAbstractItemView::item {
@@ -173,9 +302,42 @@ QComboBox QAbstractItemView::item {
 }
 
 QComboBox QAbstractItemView::item:hover {
-    background-color: #F5F7FA;
+    background-color: rgba(240, 240, 240, 200);
+}
+
+QMenu {
+    background-color: rgba(255, 255, 255, 240);
+    border: 1px solid rgba(200, 200, 200, 100);
+    border-radius: 6px;
+}
+
+QMenu::item {
+    padding: 6px 24px 6px 20px;
+    border: 1px solid transparent;
+}
+
+QMenu::item:selected {
+    background-color: rgba(200, 220, 240, 200);
+    color: #333333;
+    border-radius: 4px;
+}
+
+#appContainer {
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 200);
 }
 """
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('tbox.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('TBox')
 
 def resource_path(relative_path):
     """ 获取资源的绝对路径 """
@@ -183,25 +345,476 @@ def resource_path(relative_path):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
-class ToolManagerApp(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Tool Manager Pro")
-        self.setGeometry(200, 200, 1200, 800)
+class TitleBar(QFrame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.setObjectName("titleBar")
+        self.setFixedHeight(40)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 10, 0)
+        
+        # 应用图标
+        self.iconLabel = QLabel()
+        self.iconLabel.setFixedSize(20, 20)
+        icon = QIcon(resource_path("icon.png"))
+        pixmap = icon.pixmap(20, 20)
+        self.iconLabel.setPixmap(pixmap)
+        
+        # 标题
+        self.titleLabel = QLabel("TBox")
+        self.titleLabel.setObjectName("titleLabel")
+        
+        # 设置按钮
+        self.settingsButton = QPushButton()
+        self.settingsButton.setObjectName("settingsButton")
+        self.settingsButton.setFixedSize(30, 30)
+        self.settingsButton.setIcon(QIcon(resource_path("icons/settings.png")))
+        self.settingsButton.setIconSize(QSize(16, 16))
+        self.settingsButton.clicked.connect(self.parent.show_settings)
+        
+        # 窗口控制按钮
+        self.minimizeButton = QPushButton()
+        self.minimizeButton.setObjectName("minimizeButton")
+        self.minimizeButton.setFixedSize(30, 30)
+        self.minimizeButton.setIcon(QIcon(resource_path("icons/minimize.png")))
+        self.minimizeButton.setIconSize(QSize(16, 16))
+        
+        self.maximizeButton = QPushButton()
+        self.maximizeButton.setObjectName("maximizeButton")
+        self.maximizeButton.setFixedSize(30, 30)
+        self.maximizeButton.setIcon(QIcon(resource_path("icons/maximize.png")))
+        self.maximizeButton.setIconSize(QSize(16, 16))
+        
+        self.closeButton = QPushButton()
+        self.closeButton.setObjectName("closeButton")
+        self.closeButton.setFixedSize(30, 30)
+        self.closeButton.setIcon(QIcon(resource_path("icons/close.png")))
+        self.closeButton.setIconSize(QSize(16, 16))
+        
+        layout.addWidget(self.iconLabel)
+        layout.addWidget(self.titleLabel)
+        layout.addStretch()
+        layout.addWidget(self.settingsButton)
+        layout.addWidget(self.minimizeButton)
+        layout.addWidget(self.maximizeButton)
+        layout.addWidget(self.closeButton)
+        
+        # 设置按钮事件
+        self.minimizeButton.clicked.connect(self.parent.showMinimized)
+        self.maximizeButton.clicked.connect(self.toggleMaximize)
+        self.closeButton.clicked.connect(self.parent.close)
+        
+        self.start = None
+        
+    def toggleMaximize(self):
+        if self.parent.isMaximized():
+            self.parent.showNormal()
+            self.maximizeButton.setIcon(QIcon(resource_path("icons/maximize.png")))
+        else:
+            self.parent.showMaximized()
+            self.maximizeButton.setIcon(QIcon(resource_path("icons/restore.png")))
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.start = event.pos()
+        return super().mousePressEvent(event)
+        
+    def mouseMoveEvent(self, event):
+        if self.start and event.buttons() == Qt.LeftButton:
+            self.parent.move(self.parent.pos() + event.pos() - self.start)
+        return super().mouseMoveEvent(event)
+    
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.toggleMaximize()
+        return super().mouseDoubleClickEvent(event)
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("设置")
+        self.setFixedSize(500, 400)  # 增加对话框大小
         self.setStyleSheet(STYLE_SHEET)
+        
+        # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path("icon.png")))
         
-        self.environments = []
-        self.categories = {}
-        self.shortcut_dirs = []
-        self.categories_order = []
-        self.search_keyword = ""
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
         
-        self.load_config()
-        self.init_ui()
-        self.setup_connections()
-        self.fade_in_animation()
+        # 启动设置
+        startup_group = QGroupBox("启动设置")
+        startup_layout = QFormLayout()
+        startup_layout.setContentsMargins(15, 15, 15, 15)
+        startup_layout.setSpacing(15)
+        startup_layout.setLabelAlignment(Qt.AlignLeft)  # 左对齐标签
+        
+        self.startup_check = QCheckBox("开机自启动")
+        self.startup_check.setChecked(self.is_startup_enabled())
+        startup_layout.addRow(self.startup_check)
+        
+        startup_group.setLayout(startup_layout)
+        layout.addWidget(startup_group)
+        
+        # 快捷键设置
+        hotkey_group = QGroupBox("快捷键设置")
+        hotkey_layout = QFormLayout()
+        hotkey_layout.setContentsMargins(15, 15, 15, 15)
+        hotkey_layout.setSpacing(15)
+        hotkey_layout.setLabelAlignment(Qt.AlignLeft)  # 左对齐标签
+        
+        self.hotkey_edit = QKeySequenceEdit()
+        self.hotkey_edit.setKeySequence(QKeySequence(self.get_hotkey()))
+        self.hotkey_edit.setMinimumWidth(200)  # 设置最小宽度
+        hotkey_layout.addRow("显示/隐藏快捷键:", self.hotkey_edit)
+        
+        hotkey_group.setLayout(hotkey_layout)
+        layout.addWidget(hotkey_group)
+        
+        # 按钮
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 20, 0, 0)
+        button_layout.setSpacing(15)
+        
+        save_btn = QPushButton("保存")
+        save_btn.setFixedWidth(120)
+        save_btn.setFixedHeight(35)
+        save_btn.clicked.connect(self.save_settings)
+        
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedWidth(120)
+        cancel_btn.setFixedHeight(35)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+    
+    def get_hotkey(self):
+        settings = QSettings("TBox", "TBox")
+        return settings.value("hotkey", "Ctrl+Alt+T")
+    
+    def is_startup_enabled(self):
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                               r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                               0, winreg.KEY_READ)
+            try:
+                winreg.QueryValueEx(key, "TBox")
+                return True
+            except WindowsError:
+                return False
+            finally:
+                winreg.CloseKey(key)
+        except WindowsError:
+            return False
+    
+    def save_settings(self):
+        try:
+            hotkey = self.hotkey_edit.keySequence().toString()
+            
+            # 保存快捷键设置
+            settings = QSettings("TBox", "TBox")
+            settings.setValue("hotkey", hotkey)
+            
+            # 设置开机启动
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                               r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                               0, winreg.KEY_WRITE)
+            if self.startup_check.isChecked():
+                exe_path = os.path.abspath(sys.argv[0])
+                winreg.SetValueEx(key, "TBox", 0, winreg.REG_SZ, exe_path)
+            else:
+                try:
+                    winreg.DeleteValue(key, "TBox")
+                except WindowsError:
+                    pass
+            winreg.CloseKey(key)
+            
+            self.accept()
+        except WindowsError as e:
+            QMessageBox.warning(self, "错误", f"设置保存失败: {str(e)}")
+            return
 
+class GlobalHotkey(QAbstractNativeEventFilter):
+    def __init__(self, callback):
+        super().__init__()
+        self.callback = callback
+        self.hotkey_id = 1
+        self.registered = False
+        
+    def register_hotkey(self, key_sequence):
+        try:
+            # 解析快捷键
+            modifiers = 0
+            key = 0
+            
+            # 将快捷键字符串转换为大写并分割
+            key_parts = [part.strip().upper() for part in key_sequence.split("+")]
+            logger.info(f"解析快捷键: {key_parts}")
+            
+            # 处理修饰键
+            for part in key_parts[:-1]:  # 最后一个部分是实际按键
+                if part == "CTRL":
+                    modifiers |= win32con.MOD_CONTROL
+                elif part == "ALT":
+                    modifiers |= win32con.MOD_ALT
+                elif part == "SHIFT":
+                    modifiers |= win32con.MOD_SHIFT
+                elif part == "WIN":
+                    modifiers |= win32con.MOD_WIN
+            
+            # 处理实际按键
+            last_key = key_parts[-1]
+            if len(last_key) == 1:  # 字母键
+                key = ord(last_key)
+            elif last_key.startswith("F"):  # 功能键
+                try:
+                    key = getattr(win32con, f"VK_F{last_key[1:]}")
+                except AttributeError:
+                    raise Exception(f"不支持的功能键: {last_key}")
+            else:
+                raise Exception(f"不支持的按键: {last_key}")
+            
+            logger.info(f"注册快捷键 - 修饰键: {modifiers}, 按键: {key}")
+            
+            # 注销旧的快捷键
+            if self.registered:
+                try:
+                    win32gui.UnregisterHotKey(None, self.hotkey_id)
+                    logger.info("成功注销旧的快捷键")
+                except Exception as e:
+                    logger.warning(f"注销旧快捷键失败: {str(e)}")
+            
+            # 注册新的快捷键
+            try:
+                result = win32gui.RegisterHotKey(None, self.hotkey_id, modifiers, key)
+                if result == 0:  # 如果返回0，表示注册失败
+                    error_code = win32api.GetLastError()
+                    error_msg = win32api.FormatMessage(error_code)
+                    raise Exception(f"注册快捷键失败 (错误代码: {error_code}): {error_msg}")
+                logger.info("成功注册新的快捷键")
+            except Exception as e:
+                logger.error(f"注册快捷键失败: {str(e)}")
+                return False
+            
+            self.registered = True
+            return True
+            
+        except Exception as e:
+            logger.error(f"注册全局快捷键失败: {str(e)}")
+            return False
+    
+    def nativeEventFilter(self, eventType, message):
+        try:
+            if eventType == "windows_generic_MSG":
+                msg = ctypes.wintypes.MSG.from_address(message.__int__())
+                if msg.message == win32con.WM_HOTKEY:
+                    if msg.wParam == self.hotkey_id:
+                        logger.info("检测到快捷键触发")
+                        self.callback()
+                        return True, 0
+            return False, 0
+        except Exception as e:
+            logger.error(f"处理全局快捷键事件失败: {str(e)}")
+            return False, 0
+
+class ToolManagerApp(QMainWindow):
+    def __init__(self):
+        try:
+            super().__init__(None, Qt.FramelessWindowHint)
+            logger.info("初始化主窗口")
+            
+            # 设置窗口图标
+            self.setWindowIcon(QIcon(resource_path("icon.png")))
+            
+            self.setWindowTitle("TBox")
+            self.setGeometry(200, 200, 1200, 800)
+            
+            # 创建阴影效果
+            self.shadow = QGraphicsDropShadowEffect(self)
+            self.shadow.setBlurRadius(20)
+            self.shadow.setColor(QColor(0, 0, 0, 60))
+            self.shadow.setOffset(0, 0)
+            
+            # 创建容器部件，应用阴影效果
+            self.container = QWidget(self)
+            self.container.setObjectName("appContainer")
+            self.container.setGraphicsEffect(self.shadow)
+            
+            # 设置主布局
+            self.container_layout = QVBoxLayout(self.container)
+            self.container_layout.setContentsMargins(0, 0, 0, 0)
+            self.container_layout.setSpacing(0)
+            
+            # 添加自定义标题栏
+            self.title_bar = TitleBar(self)
+            self.container_layout.addWidget(self.title_bar)
+            
+            # 主内容区域
+            self.main_content = QWidget()
+            self.main_layout = QVBoxLayout(self.main_content)
+            self.main_layout.setContentsMargins(20, 20, 20, 20)
+            self.main_layout.setSpacing(15)
+            self.container_layout.addWidget(self.main_content)
+            
+            # 设置容器为中央部件
+            self.setCentralWidget(self.container)
+            
+            # 设置样式表
+            self.setStyleSheet(STYLE_SHEET)
+            
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            
+            self.environments = []
+            self.categories = {}
+            self.shortcut_dirs = []
+            self.categories_order = []
+            self.search_keyword = ""
+            
+            self.load_config()
+            self.init_ui()
+            self.setup_connections()
+            self.fade_in_animation()
+            
+            # 设置定时器检查窗口状态
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.check_window_state)
+            self.timer.start(100)  # 每100ms检查一次
+            
+            # 设置系统托盘
+            self.setup_tray()
+            
+            # 设置全局快捷键
+            self.setup_hotkey()
+            
+            logger.info("主窗口初始化完成")
+            
+        except Exception as e:
+            logger.error(f"初始化主窗口时发生错误: {str(e)}")
+            QMessageBox.critical(None, "错误", f"程序启动失败: {str(e)}")
+            sys.exit(1)
+
+    def setup_tray(self):
+        try:
+            logger.info("设置系统托盘")
+            self.tray_icon = QSystemTrayIcon(self)
+            self.tray_icon.setIcon(QIcon(resource_path("icon.png")))
+            
+            # 创建托盘菜单
+            tray_menu = QMenu()
+            
+            show_action = QAction("显示", self)
+            show_action.triggered.connect(self.show_window)
+            tray_menu.addAction(show_action)
+            
+            settings_action = QAction("设置", self)
+            settings_action.triggered.connect(self.show_settings)
+            tray_menu.addAction(settings_action)
+            
+            tray_menu.addSeparator()
+            
+            quit_action = QAction("退出", self)
+            quit_action.triggered.connect(self.quit_application)
+            tray_menu.addAction(quit_action)
+            
+            self.tray_icon.setContextMenu(tray_menu)
+            self.tray_icon.show()
+            
+            # 托盘图标点击事件
+            self.tray_icon.activated.connect(self.tray_icon_activated)
+            logger.info("系统托盘设置完成")
+            
+        except Exception as e:
+            logger.error(f"设置系统托盘时发生错误: {str(e)}")
+            QMessageBox.warning(self, "警告", "系统托盘设置失败，程序将继续运行")
+    
+    def tray_icon_activated(self, reason):
+        try:
+            if reason == QSystemTrayIcon.Trigger:
+                self.toggle_window()
+        except Exception as e:
+            logger.error(f"处理托盘图标点击时发生错误: {str(e)}")
+    
+    def show_window(self):
+        try:
+            self.showNormal()
+            self.activateWindow()
+            logger.info("显示主窗口")
+        except Exception as e:
+            logger.error(f"显示窗口时发生错误: {str(e)}")
+    
+    def quit_application(self):
+        try:
+            logger.info("退出应用程序")
+            self.tray_icon.hide()
+            self.timer.stop()
+            QApplication.quit()
+        except Exception as e:
+            logger.error(f"退出应用程序时发生错误: {str(e)}")
+            sys.exit(1)
+    
+    def check_window_state(self):
+        try:
+            if not self.isActiveWindow() and self.isVisible():
+                self.hide()
+        except Exception as e:
+            logger.error(f"检查窗口状态时发生错误: {str(e)}")
+    
+    def toggle_window(self):
+        try:
+            if self.isVisible():
+                if self.isActiveWindow():
+                    self.hide()
+                    logger.info("隐藏主窗口")
+                else:
+                    self.activateWindow()
+                    self.showNormal()
+                    self.raise_()
+                    logger.info("激活主窗口")
+            else:
+                self.showNormal()
+                self.activateWindow()
+                self.raise_()
+                logger.info("显示主窗口")
+        except Exception as e:
+            logger.error(f"切换窗口状态时发生错误: {str(e)}")
+    
+    def closeEvent(self, event):
+        try:
+            logger.info("处理窗口关闭事件")
+            self.hide()
+            event.ignore()
+        except Exception as e:
+            logger.error(f"处理窗口关闭事件时发生错误: {str(e)}")
+            event.accept()
+
+    def show_settings(self):
+        try:
+            dialog = SettingsDialog(self)
+            if dialog.exec_() == QDialog.Accepted:
+                # 重新设置快捷键
+                self.setup_hotkey()
+                logger.info("设置已保存")
+        except Exception as e:
+            logger.error(f"显示设置对话框时发生错误: {str(e)}")
+            QMessageBox.warning(self, "错误", f"设置保存失败: {str(e)}")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragPos = event.globalPos()
+            
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and not self.isMaximized():
+            self.move(self.pos() + event.globalPos() - self.dragPos)
+            self.dragPos = event.globalPos()
+            
     def fade_in_animation(self):
         self.anim = QPropertyAnimation(self, b"windowOpacity")
         self.anim.setDuration(300)
@@ -211,18 +824,13 @@ class ToolManagerApp(QMainWindow):
         self.anim.start()
 
     def init_ui(self):
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout()
-        main_widget.setLayout(main_layout)
-        
         # 搜索框
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("全局搜索工具（支持模糊匹配）...")
-        main_layout.addWidget(self.search_input)
+        self.main_layout.addWidget(self.search_input)
         
         splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter)
+        self.main_layout.addWidget(splitter)
         
         # 左侧分类面板
         left_panel = QWidget()
@@ -258,8 +866,8 @@ class ToolManagerApp(QMainWindow):
         tool_layout.addWidget(self.tool_list)
         
         tool_btn_layout = QHBoxLayout()
-        self.add_tool_btn = self.create_icon_button("添加工具", "#409EFF", "tool.png")
-        self.del_tool_btn = self.create_icon_button("删除工具", "#F56C6C", "delete.png")
+        self.add_tool_btn = self.create_icon_button("添加工具", "rgba(70, 130, 220, 200)", "tool.png")
+        self.del_tool_btn = self.create_icon_button("删除工具", "rgba(220, 70, 70, 200)", "delete.png")
         tool_btn_layout.addWidget(self.add_tool_btn)
         tool_btn_layout.addWidget(self.del_tool_btn)
         tool_layout.addLayout(tool_btn_layout)
@@ -273,8 +881,8 @@ class ToolManagerApp(QMainWindow):
         shortcut_layout.addWidget(self.shortcut_list)
         
         sc_btn_layout = QHBoxLayout()
-        self.add_sc_btn = self.create_icon_button("添加快捷方式", "#409EFF", "shortcut.png")
-        self.del_sc_btn = self.create_icon_button("删除快捷方式", "#F56C6C", "delete.png")
+        self.add_sc_btn = self.create_icon_button("添加快捷方式", "rgba(70, 130, 220, 200)", "shortcut.png")
+        self.del_sc_btn = self.create_icon_button("删除快捷方式", "rgba(220, 70, 70, 200)", "delete.png")
         sc_btn_layout.addWidget(self.add_sc_btn)
         sc_btn_layout.addWidget(self.del_sc_btn)
         shortcut_layout.addLayout(sc_btn_layout)
@@ -288,8 +896,8 @@ class ToolManagerApp(QMainWindow):
         env_layout.addWidget(self.env_list)
         
         env_btn_layout = QHBoxLayout()
-        self.add_env_btn = self.create_icon_button("添加环境", "#409EFF", "environment.png")
-        self.del_env_btn = self.create_icon_button("删除环境", "#F56C6C", "delete.png")
+        self.add_env_btn = self.create_icon_button("添加环境", "rgba(70, 130, 220, 200)", "environment.png")
+        self.del_env_btn = self.create_icon_button("删除环境", "rgba(220, 70, 70, 200)", "delete.png")
         env_btn_layout.addWidget(self.add_env_btn)
         env_btn_layout.addWidget(self.del_env_btn)
         env_layout.addLayout(env_btn_layout)
@@ -315,7 +923,8 @@ class ToolManagerApp(QMainWindow):
                 padding: 8px 16px;
             }}
             QPushButton:hover {{ 
-                background-color: {QColor(color).darker(115).name()};
+                background-color: {color};
+                opacity: 0.8;
             }}
         """)
         icon_path = resource_path(f"icons/{icon_name}")
@@ -636,7 +1245,14 @@ class ToolManagerApp(QMainWindow):
 
     def open_tool_directory(self):
         if item := self.tool_list.currentItem():
-            category = self.category_list.currentItem().text()
+            if self.search_keyword:
+                category = item.data(Qt.UserRole)
+            else:
+                if not (current := self.category_list.currentItem()):
+                    QMessageBox.warning(self, "错误", "请先选择分类！")
+                    return
+                category = current.text()
+            
             tool = next(
                 t for t in self.categories[category]
                 if t["display_name"] == item.text()
@@ -659,9 +1275,75 @@ class ToolManagerApp(QMainWindow):
         self.del_sc_btn.clicked.connect(self.delete_shortcut)
         self.shortcut_list.itemDoubleClicked.connect(self.open_shortcut)
 
+    def setup_hotkey(self):
+        try:
+            settings = QSettings("TBox", "TBox")
+            hotkey = settings.value("hotkey", "Ctrl+Alt+T")
+            logger.info(f"尝试设置快捷键: {hotkey}")
+            
+            # 创建全局快捷键处理器
+            self.hotkey_handler = GlobalHotkey(self.show_and_activate)
+            
+            # 注册全局快捷键
+            if not self.hotkey_handler.register_hotkey(hotkey):
+                raise Exception("注册全局快捷键失败，请尝试使用其他快捷键组合")
+            
+            # 安装事件过滤器
+            QApplication.instance().installNativeEventFilter(self.hotkey_handler)
+            
+            logger.info(f"成功设置快捷键: {hotkey}")
+            
+        except Exception as e:
+            logger.error(f"设置快捷键时发生错误: {str(e)}")
+            QMessageBox.warning(self, "警告", f"快捷键设置失败: {str(e)}\n请尝试使用其他快捷键组合")
+    
+    def show_and_activate(self):
+        try:
+            if self.isVisible():
+                if self.isActiveWindow():
+                    self.hide()
+                    logger.info("隐藏主窗口")
+                else:
+                    self.activateWindow()
+                    self.showNormal()
+                    self.raise_()
+                    logger.info("激活主窗口")
+            else:
+                self.showNormal()
+                self.activateWindow()
+                self.raise_()
+                logger.info("显示主窗口")
+        except Exception as e:
+            logger.error(f"切换窗口状态时发生错误: {str(e)}")
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    window = ToolManagerApp()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        # 确保只有一个实例运行
+        socket = QLocalSocket()
+        socket.connectToServer("TBox")
+        if socket.waitForConnected(500):
+            # 如果已经有一个实例在运行，则退出
+            sys.exit(0)
+        socket.close()
+        
+        # 创建本地服务器
+        server = QLocalServer()
+        server.listen("TBox")
+        
+        # 创建应用程序实例
+        app = QApplication(sys.argv)
+        app.setStyle("Fusion")
+        
+        # 设置应用程序属性
+        app.setQuitOnLastWindowClosed(False)
+        
+        # 创建主窗口
+        window = ToolManagerApp()
+        
+        # 运行应用程序
+        sys.exit(app.exec_())
+        
+    except Exception as e:
+        logging.error(f"程序启动失败: {str(e)}")
+        QMessageBox.critical(None, "错误", f"程序启动失败: {str(e)}")
+        sys.exit(1)
