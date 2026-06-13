@@ -1,11 +1,11 @@
 import sys
 import os
 import json
+import shutil
 import subprocess
 import win32com.client
 import winreg
 import logging
-import keyboard
 import time
 from PyQt5.QtCore import (
     Qt, QSize, QPropertyAnimation, 
@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
     QFrame, QGraphicsDropShadowEffect, QDialog,
     QCheckBox, QKeySequenceEdit, QGroupBox,
     QFormLayout, QComboBox, QSystemTrayIcon,
-    QShortcut, QTextEdit, QStackedLayout, QAbstractItemView
+    QShortcut, QTextEdit, QStackedLayout, QAbstractItemView, QSpinBox
 )
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
 import win32con
@@ -39,11 +39,7 @@ UnregisterHotKey.argtypes = [wintypes.HWND, wintypes.INT]
 UnregisterHotKey.restype = wintypes.BOOL
 
 # 导入统一样式配置
-try:
-    from unified_styles import get_unified_style, get_color_scheme
-    UNIFIED_STYLE = True
-except ImportError:
-    UNIFIED_STYLE = False
+UNIFIED_STYLE = False  # 使用内置浅色主题
 
 # Windows亚克力效果相关定义
 DWM_BB_ENABLE = 0x00000001
@@ -86,248 +82,155 @@ def enable_acrylic_effect(hwnd):
 
 CONFIG_FILE = "tool_manager_config.json"
 
-STYLE_SHEET = r"""
-/* ===== Epic Dark Launcher Style ===== */
-QWidget, QMainWindow {
-    background-color: #0f1115;
-    color: #e5e7eb;
-    font-family: 'Microsoft YaHei UI', 'Segoe UI', 'Arial';
-    font-size: 14px;
-    border: none;
+THEMES = {
+    "浅色": {
+        "bg": "#f0f4f8", "container": "#f0f4f8",
+        "titlebar": "#ffffff", "titlebar_border": "#e2e8f0",
+        "text": "#0f172a", "text_sub": "#334155", "text_muted": "#64748b",
+        "card": "#ffffff", "card_border": "#e2e8f0", "card_hover": "#f8fafc",
+        "card_border_hover": "#93c5fd",
+        "list_bg": "#ffffff", "list_border": "#e2e8f0",
+        "item_hover": "#f1f5f9", "item_sel": "#dbeafe", "item_sel_text": "#2563eb",
+        "input_bg": "#ffffff", "input_border": "#e2e8f0",
+        "btn_bg": "#ffffff", "btn_border": "#e2e8f0", "btn_text": "#374151", "btn_hover": "#f8fafc",
+        "primary": "#3b82f6", "primary_hover": "#2563eb", "primary_text": "#ffffff",
+        "danger_bg": "#ef4444", "danger_hover": "#dc2626", "danger_text": "#ffffff",
+        "badge_bg": "#eff6ff", "badge_border": "#bfdbfe", "badge_text": "#2563eb",
+        "bulk_bg": "#eff6ff", "bulk_border": "#bfdbfe",
+        "scrollbar": "#cbd5e1", "scrollbar_hover": "#94a3b8", "sep": "#e2e8f0",
+        "toast_bg": "#1e293b", "toast_border": "#334155",
+        "run_btn": "#3b82f6", "run_btn_hover": "#2563eb",
+        "open_btn": "#f1f5f9", "open_btn_border": "#e2e8f0", "empty_icon": "#94a3b8",
+    },
+    "深色": {
+        "bg": "#0f1117", "container": "#0f1117",
+        "titlebar": "#1a1d27", "titlebar_border": "#2d3148",
+        "text": "#f1f5f9", "text_sub": "#cbd5e1", "text_muted": "#64748b",
+        "card": "#1e2235", "card_border": "#2d3148", "card_hover": "#252840",
+        "card_border_hover": "#4f6ef7",
+        "list_bg": "#1a1d27", "list_border": "#2d3148",
+        "item_hover": "#252840", "item_sel": "rgba(79,110,247,0.18)", "item_sel_text": "#818cf8",
+        "input_bg": "#1e2235", "input_border": "#2d3148",
+        "btn_bg": "#1e2235", "btn_border": "#2d3148", "btn_text": "#cbd5e1", "btn_hover": "#252840",
+        "primary": "#4f6ef7", "primary_hover": "#3b5bdb", "primary_text": "#ffffff",
+        "danger_bg": "#ef4444", "danger_hover": "#dc2626", "danger_text": "#ffffff",
+        "badge_bg": "rgba(79,110,247,0.15)", "badge_border": "rgba(79,110,247,0.3)", "badge_text": "#818cf8",
+        "bulk_bg": "rgba(79,110,247,0.1)", "bulk_border": "rgba(79,110,247,0.25)",
+        "scrollbar": "#2d3148", "scrollbar_hover": "#4f6ef7", "sep": "#2d3148",
+        "toast_bg": "#1e2235", "toast_border": "#2d3148",
+        "run_btn": "#4f6ef7", "run_btn_hover": "#3b5bdb",
+        "open_btn": "#252840", "open_btn_border": "#2d3148", "empty_icon": "#475569",
+    },
+    "护眼绿": {
+        "bg": "#e8f5e9", "container": "#e8f5e9",
+        "titlebar": "#f1f8f1", "titlebar_border": "#c8e6c9",
+        "text": "#1b3a1f", "text_sub": "#2e5c34", "text_muted": "#5a8a60",
+        "card": "#f1f8f1", "card_border": "#c8e6c9", "card_hover": "#e8f5e9",
+        "card_border_hover": "#66bb6a",
+        "list_bg": "#f1f8f1", "list_border": "#c8e6c9",
+        "item_hover": "#dcedc8", "item_sel": "#c8e6c9", "item_sel_text": "#2e7d32",
+        "input_bg": "#f1f8f1", "input_border": "#c8e6c9",
+        "btn_bg": "#f1f8f1", "btn_border": "#c8e6c9", "btn_text": "#2e5c34", "btn_hover": "#dcedc8",
+        "primary": "#43a047", "primary_hover": "#2e7d32", "primary_text": "#1b3a1f",
+        "danger_bg": "#ef4444", "danger_hover": "#dc2626", "danger_text": "#ffffff",
+        "badge_bg": "#dcedc8", "badge_border": "#a5d6a7", "badge_text": "#2e7d32",
+        "bulk_bg": "#dcedc8", "bulk_border": "#a5d6a7",
+        "scrollbar": "#a5d6a7", "scrollbar_hover": "#66bb6a", "sep": "#c8e6c9",
+        "toast_bg": "#1b3a1f", "toast_border": "#2e5c34",
+        "run_btn": "#43a047", "run_btn_hover": "#2e7d32",
+        "open_btn": "#dcedc8", "open_btn_border": "#c8e6c9", "empty_icon": "#81c784",
+    },
+    "暖橙": {
+        "bg": "#fff8f0", "container": "#fff8f0",
+        "titlebar": "#ffffff", "titlebar_border": "#ffe0b2",
+        "text": "#3e1f00", "text_sub": "#6d3a00", "text_muted": "#a0622a",
+        "card": "#ffffff", "card_border": "#ffe0b2", "card_hover": "#fff3e0",
+        "card_border_hover": "#ff9800",
+        "list_bg": "#ffffff", "list_border": "#ffe0b2",
+        "item_hover": "#fff3e0", "item_sel": "#ffe0b2", "item_sel_text": "#e65100",
+        "input_bg": "#ffffff", "input_border": "#ffe0b2",
+        "btn_bg": "#ffffff", "btn_border": "#ffe0b2", "btn_text": "#6d3a00", "btn_hover": "#fff3e0",
+        "primary": "#f57c00", "primary_hover": "#e65100", "primary_text": "#3e1f00",
+        "danger_bg": "#ef4444", "danger_hover": "#dc2626", "danger_text": "#ffffff",
+        "badge_bg": "#fff3e0", "badge_border": "#ffcc80", "badge_text": "#e65100",
+        "bulk_bg": "#fff3e0", "bulk_border": "#ffcc80",
+        "scrollbar": "#ffcc80", "scrollbar_hover": "#ff9800", "sep": "#ffe0b2",
+        "toast_bg": "#3e1f00", "toast_border": "#6d3a00",
+        "run_btn": "#f57c00", "run_btn_hover": "#e65100",
+        "open_btn": "#fff3e0", "open_btn_border": "#ffe0b2", "empty_icon": "#ffb74d",
+    },
 }
 
-/* 主容器卡片 */
-#appContainer {
-    background-color: rgba(15,17,21,0.88); 
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 18px;
-}
+CURRENT_THEME = "浅色"
+CURRENT_FONT_SIZE = 13
 
-ng-bottom: 2px;
-}
+def build_style(theme_name=None, font_size=None):
+    t = THEMES.get(theme_name or CURRENT_THEME, THEMES["浅色"])
+    fs = font_size or CURRENT_FONT_SIZE
+    return (
+        "QWidget, QMainWindow {"
+        f"background-color: {t['bg']}; color: {t['text']};"
+        "font-family: 'Microsoft YaHei UI', 'Segoe UI', 'Arial';"
+        f"font-size: {fs}px; font-weight: 600; border: none;}}"
+        f"#appContainer {{background-color: {t['container']}; border-radius: 12px;}}"
+        f"#titleBar {{background-color: {t['titlebar']}; border-bottom: 1px solid {t['titlebar_border']};"
+        "border-top-left-radius: 12px; border-top-right-radius: 12px;}"
+        f"#titleLabel {{color: {t['text']}; font-size: {fs}px; font-weight: 700;}}"
+        "#settingsButton, #minimizeButton, #maximizeButton, #closeButton"
+        "{background-color: transparent; border: none; border-radius: 6px; min-width: 28px; min-height: 28px;}"
+        f"#settingsButton:hover, #minimizeButton:hover, #maximizeButton:hover {{background-color: {t['item_hover']};}}"
+        f"#closeButton:hover {{background-color: {t['danger_bg']};}}"
+        f"QLineEdit {{background-color: {t['input_bg']}; border: 1px solid {t['input_border']};"
+        f"border-radius: 6px; padding: 6px 12px; color: {t['text']}; font-size: {fs}px; font-weight: 600;}}"
+        f"QLineEdit:focus {{border-color: {t['primary']};}}"
+        f"QListWidget {{background-color: {t['list_bg']}; border: 1px solid {t['list_border']};"
+        "border-radius: 8px; padding: 4px; outline: 0;}"
+        f"QListWidget::item {{border-radius: 6px; padding: 6px 10px; color: {t['text_sub']};"
+        f"font-size: {fs}px; font-weight: 600;}}"
+        f"QListWidget::item:hover {{background-color: {t['item_hover']}; color: {t['text']};}}"
+        f"QListWidget::item:selected {{background-color: {t['item_sel']}; color: {t['item_sel_text']}; font-weight: 700;}}"
+        f"QListWidget::item:selected:active {{background-color: {t['item_sel']}; color: {t['item_sel_text']};}}"
+        "QTabWidget::pane {border: none; background-color: transparent;}"
+        f"QTabBar::tab {{background-color: transparent; border: none; color: {t['text_muted']};"
+        f"padding: 8px 16px; font-size: {fs}px; font-weight: 600;}}"
+        f"QTabBar::tab:selected {{color: {t['primary']}; border-bottom: 2px solid {t['primary']}; font-weight: 700;}}"
+        f"QTabBar::tab:hover {{color: {t['text']};}}"
+        f"QPushButton {{background-color: {t['btn_bg']}; border: 1px solid {t['btn_border']};"
+        f"border-radius: 6px; padding: 6px 14px; color: {t['btn_text']}; font-weight: 600; font-size: {fs}px;}}"
+        f"QPushButton:hover {{background-color: {t['btn_hover']};}}"
+        f"QPushButton:pressed {{background-color: {t['item_hover']};}}"
+        f"QPushButton[class='primary'] {{background-color: {t['primary']}; border-color: {t['primary']}; color: {t['primary_text']};}}"
+        f"QPushButton[class='primary']:hover {{background-color: {t['primary_hover']}; border-color: {t['primary_hover']};}}"
+        f"QPushButton[class='danger'] {{background-color: {t['danger_bg']}; border-color: {t['danger_bg']}; color: {t['danger_text']};}}"
+        f"QPushButton[class='danger']:hover {{background-color: {t['danger_hover']}; border-color: {t['danger_hover']};}}"
+        f"QDialog {{background-color: {t['container']};}}"
+        f"QGroupBox {{background-color: {t['card']}; border: 1px solid {t['card_border']};"
+        f"border-radius: 8px; margin-top: 16px; padding-top: 16px; font-weight: 700; color: {t['text']}; font-size: {fs}px;}}"
+        f"QGroupBox::title {{background: transparent; color: {t['text']};"
+        "subcontrol-origin: margin; subcontrol-position: top left; left: 12px; padding: 0 8px; font-weight: 700;}"
+        f"QLabel {{color: {t['text']}; background: transparent; font-weight: 600;}}"
+        f"QCheckBox, QRadioButton {{color: {t['text_sub']}; font-weight: 600;}}"
+        "QCheckBox::indicator {width: 16px; height: 16px; border-radius: 4px;}"
+        f"QCheckBox::indicator:unchecked {{background-color: {t['input_bg']}; border: 1px solid {t['input_border']};}}"
+        f"QCheckBox::indicator:checked {{background-color: {t['primary']}; border: 1px solid {t['primary']};}}"
+        "QScrollArea {background: transparent; border: none;}"
+        "QAbstractScrollArea::viewport {background: transparent;}"
+        "QScrollBar:vertical {background: transparent; width: 6px; margin: 0;}"
+        f"QScrollBar::handle:vertical {{background: {t['scrollbar']}; border-radius: 3px; min-height: 20px;}}"
+        f"QScrollBar::handle:vertical:hover {{background: {t['scrollbar_hover']};}}"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height: 0;}"
+        f"QWidget#toolsPanel {{background-color: {t['card']}; border: 1px solid {t['card_border']}; border-radius: 8px;}}"
+        f"QFrame#bulkBar {{background-color: {t['bulk_bg']}; border: 1px solid {t['bulk_border']}; border-radius: 8px;}}"
+        f"QComboBox {{background-color: {t['input_bg']}; border: 1px solid {t['input_border']};"
+        f"border-radius: 6px; padding: 4px 10px; color: {t['text']}; font-size: {fs}px; font-weight: 600;}}"
+        "QComboBox::drop-down {border: none; width: 20px;}"
+        f"QComboBox QAbstractItemView {{background-color: {t['card']}; border: 1px solid {t['card_border']};"
+        f"color: {t['text']}; selection-background-color: {t['item_sel']}; selection-color: {t['item_sel_text']};}}"
+        f"QSpinBox {{background-color: {t['input_bg']}; border: 1px solid {t['input_border']};"
+        f"border-radius: 6px; padding: 4px 8px; color: {t['text']}; font-size: {fs}px; font-weight: 600;}}"
+    )
 
-
-
-
-#titleLabel {
-    color: #f3f4f6;
-    font-size: 16px;
-    font-weight: 700;
-}
-
-/* 标题栏按钮 */
-#settingsButton, #minimizeButton, #maximizeButton, #closeButton {
-    background-color: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    padding: 1px;
-    min-width: 36px;
-    min-height: 36px;
-}
-#settingsButton:hover, #minimizeButton:hover, #maximizeButton:hover {
-    background-color: rgba(255, 255, 255, 0.07);
-}
-#closeButton:hover {
-    background-color: rgba(239, 68, 68, 0.16);
-    border-color: rgba(239, 68, 68, 0.30);
-}
-
-/* 输入框 */
-QLineEdit {
-    background-color: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-    padding: 12px 14px;
-    color: #e5e7eb;
-}
-QLineEdit:focus {
-    border-color: rgba(59, 130, 246, 0.55);
-    background-color: rgba(255, 255, 255, 0.06);
-}
-QLineEdit::placeholder {
-    color: rgba(229, 231, 235, 0.45);
-}
-
-/* 列表(作为容器) */
-QListWidget {
-    background-color: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 16px;
-    padding: 10px;
-    outline: 0;
-}
-QListWidget::item {
-    border-radius: 12px;
-    padding: 8px;
-}
-QListWidget::item:selected {
-    background: rgba(59, 130, 246, 0.16);
-    border: 1px solid rgba(59, 130, 246, 0.28);
-}
-
-/* Tab */
-QTabWidget::pane {
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 16px;
-    background-color: rgba(255, 255, 255, 0.02);
-}
-QTabBar::tab {
-    background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    color: rgba(229, 231, 235, 0.65);
-    padding: 12px 22px;
-    margin-right: 8px;
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-}
-QTabBar::tab:selected {
-    background-color: rgba(255, 255, 255, 0.06);
-    color: #f3f4f6;
-    border-color: rgba(255, 255, 255, 0.10);
-}
-
-/* 按钮 */
-QPushButton {
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 12px;
-    padding: 10px 16px;
-    font-weight: 600;
-}
-QPushButton:hover { background-color: rgba(255, 255, 255, 0.08); }
-QPushButton:pressed { background-color: rgba(255, 255, 255, 0.10); }
-
-/* 强调/危险 */
-QPushButton[class="success"] { border-color: rgba(34, 197, 94, 0.35); }
-QPushButton[class="danger"]  { border-color: rgba(239, 68, 68, 0.35); }
-
-/* Dialog 基础 */
-QDialog {
-    background: transparent;
-}
-
-/* GroupBox (暗色卡片分区) */
-QGroupBox {
-    background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 14px;
-    margin-top: 18px;
-    padding-top: 18px;
-    font-weight: 700;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 12px;
-    padding: 0 10px;
-    color: rgba(243, 244, 246, 0.95);
-}
-/* ===== Fix: text colors ===== */
-QLabel {
-    color: #e5e7eb;
-    background: transparent;
-}
-
-/* ===== Fix: checkbox / radiobutton ===== */
-QCheckBox, QRadioButton {
-    color: rgba(229,231,235,0.85);
-}
-QCheckBox::indicator, QRadioButton::indicator {
-    width: 18px;
-    height: 18px;
-}
-QCheckBox::indicator:unchecked {
-    background-color: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 5px;
-}
-QCheckBox::indicator:checked {
-    background-color: rgba(59,130,246,0.85);
-    border: 1px solid rgba(59,130,246,0.95);
-    border-radius: 5px;
-}
-
-/* ===== Fix: scroll areas / viewports (white bars often come from here) ===== */
-QScrollArea {
-    background: transparent;
-    border: none;
-}
-QScrollArea > QWidget > QWidget {
-    background: transparent;
-}
-QAbstractScrollArea::viewport {
-    background: transparent;
-}
-
-/* ===== Fix: list items (prevent default white) ===== */
-QListWidget::item {
-    background: transparent;
-}
-QDialog#SettingsDialog {
-    background: transparent;
-}
-QDialog#SettingsDialog QWidget {
-    background: transparent;
-}
-/* ===== Dark Epic: Dialog + GroupBox fixes ===== */
-QDialog {
-    background: transparent;
-}
-
-QLabel {
-    color: #e5e7eb;
-    background: transparent;
-}
-
-QGroupBox {
-    background-color: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px;
-    margin-top: 18px;
-    padding-top: 18px;
-    color: #e5e7eb;
-}
-QGroupBox::title {
-    background: transparent;              /* ✅ 干掉白条关键 */
-    color: rgba(243,244,246,0.95);
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 12px;
-    padding: 0 10px;
-}
-/* ===== Fix: unwanted transparency / bleed-through ===== */
-QAbstractScrollArea::viewport {
-    background-color: rgba(15, 17, 21, 0.72);   /* 半透明暗底，防止透底 */
-    border-radius: 16px;
-}
-
-QListWidget {
-    background-color: rgba(15, 17, 21, 0.55);
-}
-
-QTabWidget::pane {
-    background-color: rgba(15, 17, 21, 0.55);
-}
-
-/* 如果你工具区用了 QFrame/QWidget 容器，可以给它一个统一暗底 */
-QFrame, QWidget {
-    /* 不要全局强制 background，否则会影响按钮等；只用于你自己命名的容器更好 */
-}
-QWidget#toolsPanel{
-    background-color: rgba(15,17,21,0.55);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 16px;
-}
-QListWidget::item:selected {
-    color: #f3f4f6;  /* ✅ 选中后强制白字 */
-    background-color: rgba(59,130,246,0.18);
-    border: 1px solid rgba(59,130,246,0.30);
-}
-QListWidget::item:selected:active {
-    color: #f3f4f6;
-}
-
-"""
+STYLE_SHEET = build_style()
 
 
 # 配置日志
@@ -351,66 +254,64 @@ class TitleBar(QFrame):
         super().__init__(parent)
         self.parent = parent
         self.setObjectName("titleBar")
-        self.setFixedHeight(50)  # 增加标题栏高度
+        self.setFixedHeight(44)
 
-        
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(15, 2, 15, 4)  # top=2 bottom=4
+        layout.setContentsMargins(16, 0, 12, 0)
+        layout.setSpacing(8)
 
-
-        BTN_W = 1
         # 应用图标
         self.iconLabel = QLabel()
-        self.iconLabel.setFixedSize(30, 30)  # 增加图标大小
+        self.iconLabel.setFixedSize(24, 24)
         icon = QIcon(resource_path("icon.png"))
-        pixmap = icon.pixmap(24, 24)
+        pixmap = icon.pixmap(20, 20)
         self.iconLabel.setPixmap(pixmap)
-        
+
         # 标题
         self.titleLabel = QLabel("TBox")
         self.titleLabel.setObjectName("titleLabel")
-        
+
+        layout.addWidget(self.iconLabel)
+        layout.addWidget(self.titleLabel)
+        layout.addStretch()
+
+        BTN_W = 28
         # 设置按钮
         self.settingsButton = QPushButton()
         self.settingsButton.setObjectName("settingsButton")
-        self.settingsButton.setFixedSize(1, 1)  # 增加按钮大小
+        self.settingsButton.setFixedSize(BTN_W, BTN_W)
         self.settingsButton.setIcon(QIcon(resource_path("icons/settings.png")))
-        self.settingsButton.setIconSize(QSize(18, 18))  # 增加图标大小
+        self.settingsButton.setIconSize(QSize(16, 16))
         self.settingsButton.clicked.connect(self.parent.show_settings)
-        
+
         # 窗口控制按钮
         self.minimizeButton = QPushButton()
         self.minimizeButton.setObjectName("minimizeButton")
         self.minimizeButton.setFixedSize(BTN_W, BTN_W)
         self.minimizeButton.setIcon(QIcon(resource_path("icons/minimize.png")))
-        self.minimizeButton.setIconSize(QSize(18, 18))
-        
+        self.minimizeButton.setIconSize(QSize(16, 16))
+
         self.maximizeButton = QPushButton()
         self.maximizeButton.setObjectName("maximizeButton")
         self.maximizeButton.setFixedSize(BTN_W, BTN_W)
         self.maximizeButton.setIcon(QIcon(resource_path("icons/maximize.png")))
-        self.maximizeButton.setIconSize(QSize(18, 18))
-        
+        self.maximizeButton.setIconSize(QSize(16, 16))
+
         self.closeButton = QPushButton()
         self.closeButton.setObjectName("closeButton")
         self.closeButton.setFixedSize(BTN_W, BTN_W)
         self.closeButton.setIcon(QIcon(resource_path("icons/close.png")))
-        self.closeButton.setIconSize(QSize(18, 18))
-        
-        layout.addWidget(self.iconLabel)
-        layout.addWidget(self.titleLabel)
-        layout.addStretch()
+        self.closeButton.setIconSize(QSize(16, 16))
+
         layout.addWidget(self.settingsButton, 0, Qt.AlignVCenter)
         layout.addWidget(self.minimizeButton, 0, Qt.AlignVCenter)
         layout.addWidget(self.maximizeButton, 0, Qt.AlignVCenter)
         layout.addWidget(self.closeButton, 0, Qt.AlignVCenter)
 
-
-# 设置按钮事件
         self.minimizeButton.clicked.connect(self.parent.showMinimized)
         self.maximizeButton.clicked.connect(self.toggleMaximize)
         self.closeButton.clicked.connect(self.parent.close)
-        
+
         self.start = None
         self.setAttribute(Qt.WA_StyledBackground, True)
 
@@ -444,11 +345,7 @@ class EnvironmentSelectionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setFixedSize(600, 600)
-        
-        # 设置亚克力效果支持
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_NoSystemBackground)
-        
+
         # 设置窗口图标
         self.setWindowIcon(QIcon(resource_path("icon.png")))
         
@@ -520,14 +417,12 @@ class EnvironmentSelectionDialog(QDialog):
         #     }
         # """)
         left_layout.addWidget(env_label)
-        def create_card_list_widget(self):
-            lw = QListWidget()
-            lw.setSelectionMode(QAbstractItemView.ExtendedSelection)
-            lw.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-            lw.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            lw.setSpacing(10)
-            lw.setContextMenuPolicy(Qt.CustomContextMenu)
-            return lw
+        self.env_list = QListWidget(self)
+        self.env_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.env_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.env_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.env_list.setSpacing(10)
+        self.env_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.env_list.setFixedWidth(200)
         # self.env_list.setStyleSheet("""
         #     QListWidget {
@@ -861,166 +756,110 @@ class SettingsDialog(QDialog):
         
         # 标题
         title_label = QLabel("TBox 设置")
-        title_label.setStyleSheet("""
-            QLabel {
-                font-size: 18px;
-                font-weight: 700;
-                color: #f3f4f6;
-                margin-bottom: 5px;
-            }
-        """)
         layout.addWidget(title_label)
-        
+
         # 启动设置组
         startup_group = QGroupBox("启动设置")
-        
         startup_layout = QVBoxLayout()
-        startup_layout.setContentsMargins(15, 15, 15, 15)  # 减少内边距
-        startup_layout.setSpacing(8)  # 减少间距
-        
+        startup_layout.setContentsMargins(15, 15, 15, 15)
+        startup_layout.setSpacing(8)
+
         self.startup_checkbox = QCheckBox("开机自动启动")
         self.startup_checkbox.setChecked(self.original_startup)
-        self.startup_checkbox.setStyleSheet("""
-            QCheckBox::indicator:checked {
-                border-color: #0078d4;
-                background: #0078d4;
-                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0xIDQuNUw0LjUgOEwxMSAxIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L3N2Zz4K);
-            }
-        """)
-        
+
         startup_info = QLabel("启用后，TBox 将在系统启动时自动运行")
-        startup_info.setStyleSheet("""
-            QLabel {
-                color: #f3f4f6;
-                font-size: 11px;
-                font-style: italic;
-                margin-left: 26px;
-                padding: 2px 0;
-            }
-        """)
-        
+        startup_info.setStyleSheet("QLabel{font-style: italic;}")
+
         startup_layout.addWidget(self.startup_checkbox)
         startup_layout.addWidget(startup_info)
         startup_group.setLayout(startup_layout)
         layout.addWidget(startup_group)
-        
+
         # 快捷键设置组
         hotkey_group = QGroupBox("快捷键设置")
-
         hotkey_layout = QVBoxLayout()
-        hotkey_layout.setContentsMargins(15, 15, 15, 15)  # 减少内边距
-        hotkey_layout.setSpacing(8)  # 减少间距
-        
+        hotkey_layout.setContentsMargins(15, 15, 15, 15)
+        hotkey_layout.setSpacing(8)
+
         hotkey_label = QLabel("显示/隐藏快捷键:")
-        hotkey_label.setStyleSheet("""
-            QLabel {
-                font-size: 13px;
-                color: #f3f4f6;
-                padding: 2px 0;
-            }
-        """)
-        
+
         self.hotkey_edit = QKeySequenceEdit()
         self.hotkey_edit.setKeySequence(QKeySequence(self.original_hotkey))
-        self.hotkey_edit.setStyleSheet("""
-            QKeySequenceEdit {
-                min-width: 220px;
-                height: 48px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 12px 14px;
-                background: white;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            
-            QKeySequenceEdit:focus {
-                border-color: #f3f4f6;
-            }
-        """)
-        
+        self.hotkey_edit.setFixedHeight(36)
+
         hotkey_info = QLabel("提示：建议使用 Ctrl+Alt+字母 组合")
-        hotkey_info.setStyleSheet("""
-            QLabel {
-                color:#f3f4f6;
-                font-size: 11px;
-                font-style: italic;
-                padding: 2px 0;
-            }
-        """)
+        hotkey_info.setStyleSheet("QLabel{font-style: italic;}")
         
         hotkey_layout.addWidget(hotkey_label)
         hotkey_layout.addWidget(self.hotkey_edit)
         hotkey_layout.addWidget(hotkey_info)
         hotkey_group.setLayout(hotkey_layout)
         layout.addWidget(hotkey_group)
-        
+
+        # 外观设置组
+        appear_group = QGroupBox("外观设置")
+        appear_layout = QVBoxLayout()
+        appear_layout.setContentsMargins(15, 15, 15, 15)
+        appear_layout.setSpacing(10)
+
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(QLabel("配色主题:"))
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(list(THEMES.keys()))
+        self.theme_combo.setCurrentText(CURRENT_THEME)
+        self.theme_combo.setFixedWidth(120)
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch()
+        appear_layout.addLayout(theme_row)
+
+        font_row = QHBoxLayout()
+        font_row.addWidget(QLabel("字体大小:"))
+        self.font_spin = QSpinBox()
+        self.font_spin.setRange(10, 22)
+        self.font_spin.setValue(CURRENT_FONT_SIZE)
+        self.font_spin.setSuffix(" px")
+        self.font_spin.setFixedWidth(80)
+        font_row.addWidget(self.font_spin)
+        font_row.addStretch()
+        appear_layout.addLayout(font_row)
+
+        appear_group.setLayout(appear_layout)
+        layout.addWidget(appear_group)
+
         # 按钮区域
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 15, 0, 0)  # 减少上边距
         button_layout.setSpacing(10)
         
-        reset_btn = QPushButton("重置")
-        reset_btn.setFixedWidth(80)
-        reset_btn.setFixedHeight(32)
-        reset_btn.setStyleSheet("""
-            QPushButton {
-                background: white;
-                color: #1a1a1a;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                font-size: 12px;
-                padding: 6px 12px;
-            }
-
-            QPushButton:hover {
-                background: #f0f0f0;
-                border-color: #999;
-            }
-        """)
-        reset_btn.clicked.connect(self.reset_settings)
+        # reset_btn = QPushButton("重置")
+        # reset_btn.setFixedWidth(80)
+        # reset_btn.setFixedHeight(32)
+        # reset_btn.setStyleSheet("""
+        #     QPushButton {
+        #         background: white;
+        #         color: #1a1a1a;
+        #         border: 1px solid #ccc;
+        #         border-radius: 4px;
+        #         font-size: 12px;
+        #         padding: 6px 12px;
+        #     }
+        #
+        #     QPushButton:hover {
+        #         background: #f0f0f0;
+        #         border-color: #999;
+        #     }
+        # """)
+        # reset_btn.clicked.connect(self.reset_settings)
         
         save_btn = QPushButton("保存")
-        save_btn.setFixedWidth(80)
-        save_btn.setFixedHeight(32)
-        save_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                border: 1px solid #0078d4;
-                border-radius: 4px;
-                font-size: 12px;
-                padding: 6px 12px;
-            }
-            
-            QPushButton:hover {
-                background: #106ebe;
-                border-color: #106ebe;
-            }
-        """)
+        save_btn.setFixedSize(80, 32)
+        save_btn.setProperty("class", "primary")
         save_btn.clicked.connect(self.save_settings)
-        
+
         cancel_btn = QPushButton("取消")
-        cancel_btn.setFixedWidth(80)
-        cancel_btn.setFixedHeight(32)
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                background: white;
-                color: #1a1a1a;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                font-size: 12px;
-                padding: 6px 12px;
-            }
-            
-            QPushButton:hover {
-                background: #f0f0f0;
-                border-color: #999;
-            }
-        """)
+        cancel_btn.setFixedSize(80, 32)
         cancel_btn.clicked.connect(self.reject)
-        
-        button_layout.addWidget(reset_btn)
+
         button_layout.addStretch()
         button_layout.addWidget(save_btn)
         button_layout.addWidget(cancel_btn)
@@ -1073,7 +912,7 @@ class SettingsDialog(QDialog):
     def reset_settings(self):
         """重置设置到默认值"""
         reply = QMessageBox.question(
-            self, "确认重置", 
+            self, "确认重置",
             "确定要重置所有设置到默认值吗？",
             QMessageBox.Yes | QMessageBox.No
         )
@@ -1156,9 +995,12 @@ class SettingsDialog(QDialog):
         """检查设置是否发生变化"""
         current_startup = self.startup_checkbox.isChecked()
         current_hotkey = self.hotkey_edit.keySequence().toString()
-        
-        return (current_startup != self.original_startup or 
-                current_hotkey != self.original_hotkey)
+        current_theme = self.theme_combo.currentText()
+        current_font = self.font_spin.value()
+        return (current_startup != self.original_startup or
+                current_hotkey != self.original_hotkey or
+                current_theme != CURRENT_THEME or
+                current_font != CURRENT_FONT_SIZE)
     
     def save_settings(self):
         try:
@@ -1203,9 +1045,26 @@ class SettingsDialog(QDialog):
                 except Exception as e:
                     logger.error(f"重新设置快捷键时发生错误: {str(e)}")
                     QMessageBox.warning(self, "警告", "快捷键设置已保存，但重新注册失败，请重启程序")
-            
+
+            # 保存并应用主题/字体
+            global CURRENT_THEME, CURRENT_FONT_SIZE
+            new_theme = self.theme_combo.currentText()
+            new_font = self.font_spin.value()
+            if new_theme != CURRENT_THEME or new_font != CURRENT_FONT_SIZE:
+                CURRENT_THEME = new_theme
+                CURRENT_FONT_SIZE = new_font
+                settings = QSettings("TBox", "TBox")
+                settings.setValue("theme", new_theme)
+                settings.setValue("font_size", new_font)
+                app = QApplication.instance()
+                app.setStyleSheet(build_style(new_theme, new_font))
+                app.setFont(QFont("Microsoft YaHei UI", new_font))
+                # 刷新父窗口的内联样式
+                if hasattr(self.parent(), '_refresh_inline_styles'):
+                    self.parent()._refresh_inline_styles()
+
             self.accept()
-            
+
         except Exception as e:
             logger.error(f"保存设置时发生错误: {str(e)}")
             QMessageBox.warning(self, "错误", f"设置保存失败: {str(e)}")
@@ -1453,153 +1312,209 @@ class EmptyStateWidget(QWidget):
     def __init__(self, title="当前分类暂无工具", subtitle="点击下方按钮添加你的第一个工具", button_text="添加工具", on_action=None, parent=None):
         super().__init__(parent)
         self.on_action = on_action
-
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet("""
-        QWidget#ToolCard{
-            background-color: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 14px;
-        }
-        QWidget#ToolCard:hover{
-            background-color: rgba(255,255,255,0.06);
-            border-color: rgba(255,255,255,0.10);
-        }
-        QWidget#ToolCard[selected="true"]{
-            background-color: rgba(59,130,246,0.16);
-            border: 1px solid rgba(59,130,246,0.30);
-        }
-        QWidget#ToolCard[selected="true"] QLabel{
-            color: #f3f4f6; /* ✅ 选中时卡片内部字变亮 */
-        }
-        """)
-
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(12)
         root.setAlignment(Qt.AlignCenter)
 
-        icon = QLabel("🧰")
+        icon = QLabel("⚙")
         icon.setAlignment(Qt.AlignCenter)
-        icon.setStyleSheet("QLabel{font-size: 44px; color: rgba(229,231,235,0.85);}")
+        t = THEMES.get(CURRENT_THEME, THEMES["浅色"])
+        icon.setStyleSheet(f"QLabel{{font-size: 48px; color: {t['empty_icon']};}}")
         root.addWidget(icon)
 
         title_lbl = QLabel(title)
         title_lbl.setAlignment(Qt.AlignCenter)
-        title_lbl.setStyleSheet("QLabel{font-size: 16px; font-weight: 800; color: #f3f4f6;}")
+        title_lbl.setStyleSheet(f"QLabel{{font-size: 15px; font-weight: 700; color: {t['text']};}}")
         root.addWidget(title_lbl)
 
         sub_lbl = QLabel(subtitle)
         sub_lbl.setAlignment(Qt.AlignCenter)
         sub_lbl.setWordWrap(True)
-        sub_lbl.setStyleSheet("QLabel{font-size: 12px; color: rgba(229,231,235,0.55);}")
+        sub_lbl.setStyleSheet(f"QLabel{{font-size: 12px; color: {t['text_muted']};}}")
         root.addWidget(sub_lbl)
 
         btn = QPushButton(button_text)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet("""
-            QPushButton{
-                background-color: rgba(59,130,246,0.85);
-                border: 1px solid rgba(59,130,246,0.95);
-                border-radius: 12px;
-                padding: 10px 18px;
-                font-weight: 800;
-                color: #ffffff;
-                min-width: 140px;
-            }
-            QPushButton:hover{ background-color: rgba(59,130,246,0.95); }
-            QPushButton:pressed{ background-color: rgba(59,130,246,0.75); }
+        btn.setStyleSheet(f"""
+            QPushButton{{
+                background-color: {t['primary']};
+                border: none;
+                border-radius: 6px;
+                padding: 8px 20px;
+                font-weight: 600;
+                color: {t['primary_text']};
+                min-width: 120px;
+                font-size: 13px;
+            }}
+            QPushButton:hover{{ background-color: {t['primary_hover']}; }}
         """)
         btn.clicked.connect(lambda: self.on_action() if self.on_action else None)
         root.addWidget(btn)
 
 class ToolCardWidget(QWidget):
-    """Epic-style tool card for QListWidget.setItemWidget"""
+    """Grid tool card, theme-aware"""
     def __init__(self, title: str, subtitle: str, badge: str = "", on_run=None, on_open=None, parent=None):
         super().__init__(parent)
         self.on_run = on_run
         self.on_open = on_open
 
+        fs = CURRENT_FONT_SIZE
+        t = THEMES.get(CURRENT_THEME, THEMES["浅色"])
+        btn_h = max(22, fs + 10)
+        icon_sz = max(24, fs + 10)
+        card_min_h = max(100, fs * 8)
 
         self.setObjectName("ToolCard")
-        self.setMinimumHeight(72)
+        self.setMinimumHeight(card_min_h)
 
-        root = QHBoxLayout(self)
-        root.setContentsMargins(14, 10, 14, 10)
-        root.setSpacing(12)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(6)
 
-        # Left icon placeholder (simple circle)
-        icon = QLabel("●")
-        icon.setStyleSheet("QLabel{color: rgba(59,130,246,0.9); font-size: 14px;}")
-        icon.setFixedWidth(16)
-        root.addWidget(icon)
+        # 顶部：图标行 + badge
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
 
-        mid = QVBoxLayout()
-        mid.setSpacing(2)
+        # 选中对勾图标（默认隐藏）
+        self.check_lbl = QLabel("✔")
+        self.check_lbl.setStyleSheet(f"""
+            QLabel{{
+                font-size: {fs}px;
+                color: #fff;
+                background-color: {t['primary']};
+                border-radius: {max(8, (fs+4)//2)}px;
+                min-width: {max(16, fs+4)}px;
+                max-width: {max(16, fs+4)}px;
+                min-height: {max(16, fs+4)}px;
+                max-height: {max(16, fs+4)}px;
+                qproperty-alignment: AlignCenter;
+            }}
+        """)
+        self.check_lbl.setFixedSize(max(16, fs+4), max(16, fs+4))
+        self.check_lbl.setVisible(False)
+        top_row.addWidget(self.check_lbl)
 
-        title_lbl = QLabel(title)
-        title_lbl.setStyleSheet("QLabel{font-size: 15px; font-weight: 800; color: #f3f4f6;}")
-        mid.addWidget(title_lbl)
-
-        sub_lbl = QLabel(subtitle)
-        sub_lbl.setStyleSheet("QLabel{font-size: 12px; color: rgba(229,231,235,0.55);}")
-        sub_lbl.setWordWrap(True)
-        mid.addWidget(sub_lbl)
-
-        root.addLayout(mid, 1)
+        icon_lbl = QLabel("🔧")
+        icon_lbl.setStyleSheet(f"QLabel{{font-size: {fs+4}px; background: transparent;}}")
+        icon_lbl.setFixedSize(icon_sz, icon_sz)
+        top_row.addWidget(icon_lbl)
+        top_row.addStretch()
 
         if badge:
             badge_lbl = QLabel(badge)
-            badge_lbl.setStyleSheet("""
-                QLabel{
-                    background-color: rgba(255,255,255,0.06);
-                    border: 1px solid rgba(255,255,255,0.10);
-                    padding: 4px 10px;
-                    border-radius: 999px;
-                    font-size: 11px;
-                    color: rgba(229,231,235,0.85);
-                }
+            badge_lbl.setStyleSheet(f"""
+                QLabel{{
+                    background-color: {t['badge_bg']};
+                    border: 1px solid {t['badge_border']};
+                    padding: 1px 6px;
+                    border-radius: 4px;
+                    font-size: {max(9, fs-3)}px;
+                    color: {t['badge_text']};
+                    font-weight: 600;
+                }}
             """)
-            root.addWidget(badge_lbl)
+            top_row.addWidget(badge_lbl)
 
-        btns = QHBoxLayout()
-        btns.setSpacing(8)
+        root.addLayout(top_row)
 
-        run_btn = QPushButton("▶")
-        run_btn.setFixedSize(36, 36)
-        run_btn.setToolTip("运行")
+        # 工具名
+        title_lbl = QLabel(title)
+        title_lbl.setStyleSheet(f"QLabel{{font-size: {fs}px; font-weight: 700; color: {t['text']}; background: transparent;}}")
+        title_lbl.setWordWrap(False)
+        title_lbl.setMaximumWidth(160)
+        root.addWidget(title_lbl)
+
+        # 副标题（截断显示）
+        cat_part = subtitle.split(" · ")[0] if " · " in subtitle else subtitle
+        sub_lbl = QLabel(cat_part)
+        sub_lbl.setStyleSheet(f"QLabel{{font-size: {max(9, fs-2)}px; color: {t['text_muted']}; background: transparent;}}")
+        sub_lbl.setWordWrap(False)
+        root.addWidget(sub_lbl)
+
+        root.addStretch()
+
+        # 底部按钮行
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+
+        run_btn = QPushButton("运行")
+        run_btn.setFixedHeight(btn_h)
+        run_btn.setStyleSheet(f"""
+            QPushButton{{
+                background-color: {t['run_btn']};
+                border: none;
+                border-radius: 5px;
+                color: {t['primary_text']};
+                font-size: {max(10, fs-1)}px;
+                font-weight: 600;
+                padding: 0 12px;
+            }}
+            QPushButton:hover{{ background-color: {t['run_btn_hover']}; }}
+        """)
         run_btn.clicked.connect(lambda: self.on_run() if self.on_run else None)
 
         open_btn = QPushButton("📁")
-        open_btn.setFixedSize(36, 36)
+        open_btn.setFixedSize(btn_h, btn_h)
+        open_btn.setStyleSheet(f"""
+            QPushButton{{
+                background-color: {t['open_btn']};
+                border: 1px solid {t['open_btn_border']};
+                border-radius: 5px;
+                font-size: {max(10, fs-1)}px;
+                padding: 0;
+            }}
+            QPushButton:hover{{ background-color: {t['btn_hover']}; }}
+        """)
         open_btn.setToolTip("打开目录")
         open_btn.clicked.connect(lambda: self.on_open() if self.on_open else None)
 
-        btns.addWidget(run_btn)
-        btns.addWidget(open_btn)
+        btn_row.addWidget(run_btn, 1)
+        btn_row.addWidget(open_btn)
+        root.addLayout(btn_row)
 
-        root.addLayout(btns)
-
-        # Card hover feel
-        self.setStyleSheet("""
-            QWidget#ToolCard{
-                background-color: rgba(255,255,255,0.03);
-                border: 1px solid rgba(255,255,255,0.06);
-                border-radius: 14px;
-            }
-            QWidget#ToolCard:hover{
-                background-color: rgba(255,255,255,0.06);
-                border-color: rgba(255,255,255,0.10);
-            }
+        t = THEMES.get(CURRENT_THEME, THEMES["浅色"])
+        self.setStyleSheet(f"""
+            QWidget#ToolCard{{
+                background-color: {t['card']};
+                border: 1px solid {t['card_border']};
+                border-radius: 8px;
+            }}
+            QWidget#ToolCard:hover{{
+                border-color: {t['card_border_hover']};
+                background-color: {t['card_hover']};
+            }}
+            QWidget#ToolCard[selected="true"]{{
+                border: 2px solid {t['primary']};
+                background-color: {t['item_sel']};
+            }}
         """)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(28)
-        shadow.setColor(QColor(0, 0, 0, 160))
-        shadow.setOffset(0, 10)
-        self.setGraphicsEffect(shadow)
         self.setProperty("selected", False)
+
+        # 让所有 QLabel 子控件对鼠标透明，点击穿透到卡片本身
+        for child in self.findChildren(QLabel):
+            child.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+
+    def mousePressEvent(self, event):
+        # 找到所属 QListWidget 和对应 item，手动切换选中
+        lw = self.parent()
+        while lw and not isinstance(lw, QListWidget):
+            lw = lw.parent()
+        if lw:
+            item = None
+            for i in range(lw.count()):
+                if lw.itemWidget(lw.item(i)) is self:
+                    item = lw.item(i)
+                    break
+            if item:
+                # 临时阻塞信号，手动切换后再触发一次
+                lw.blockSignals(True)
+                item.setSelected(not item.isSelected())
+                lw.blockSignals(False)
+                lw.itemSelectionChanged.emit()
 
 
 
@@ -1636,9 +1551,9 @@ class Toast(QWidget):
 
         bg.setStyleSheet("""
             QFrame#toastBg{
-                background-color: rgba(17, 24, 39, 0.92);
-                border: 1px solid rgba(255,255,255,0.10);
-                border-radius: 14px;
+                background-color: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 8px;
             }
         """)
 
@@ -1686,7 +1601,6 @@ class ToolManagerApp(QMainWindow):
             title=title,
             subtitle=subtitle,
             badge=badge,
-            mode=mode
         )
 
         item = QListWidgetItem()
@@ -1709,13 +1623,59 @@ class ToolManagerApp(QMainWindow):
         # 可选：选中时确保显示列表页
         if n > 0 and hasattr(self, "tools_stack"):
             self.tools_stack.setCurrentIndex(1)
+
+    def update_bulk_bar_for(self, list_widget):
+        n = len(list_widget.selectedItems())
+        show = n > 0
+
+        if hasattr(self, "bulk_bar"):
+            self.bulk_bar.setVisible(show)
+        if hasattr(self, "bulk_label"):
+            self.bulk_label.setText(f"已选中 {n} 项")
+    def update_shortcut_bulk_bar(self):
+        self.update_bulk_bar_for(self.shortcut_list)
+
+    def update_env_bulk_bar(self):
+        self.update_bulk_bar_for(self.env_list)
+
     def sync_tool_card_selection_style(self):
         for i in range(self.tool_list.count()):
             it = self.tool_list.item(i)
             w = self.tool_list.itemWidget(it)
             if w is None:
                 continue
-            w.setProperty("selected", it.isSelected())
+            sel = it.isSelected()
+            w.setProperty("selected", sel)
+            if hasattr(w, 'check_lbl'):
+                w.check_lbl.setVisible(sel)
+            w.style().unpolish(w)
+            w.style().polish(w)
+            w.update()
+
+    def sync_env_card_selection_style(self):
+        for i in range(self.env_list.count()):
+            it = self.env_list.item(i)
+            w = self.env_list.itemWidget(it)
+            if w is None:
+                continue
+            sel = it.isSelected()
+            w.setProperty("selected", sel)
+            if hasattr(w, 'check_lbl'):
+                w.check_lbl.setVisible(sel)
+            w.style().unpolish(w)
+            w.style().polish(w)
+            w.update()
+
+    def sync_shortcut_card_selection_style(self):
+        for i in range(self.shortcut_list.count()):
+            it = self.shortcut_list.item(i)
+            w = self.shortcut_list.itemWidget(it)
+            if w is None:
+                continue
+            sel = it.isSelected()
+            w.setProperty("selected", sel)
+            if hasattr(w, 'check_lbl'):
+                w.check_lbl.setVisible(sel)
             w.style().unpolish(w)
             w.style().polish(w)
             w.update()
@@ -1723,25 +1683,25 @@ class ToolManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # 应用统一样式
-        if UNIFIED_STYLE:
-            self.setStyleSheet(get_unified_style())
-        else:
-            self.setStyleSheet(STYLE_SHEET)
+        # 读取保存的主题/字体设置
+        global CURRENT_THEME, CURRENT_FONT_SIZE
+        _s = QSettings("TBox", "TBox")
+        CURRENT_THEME = _s.value("theme", "浅色")
+        CURRENT_FONT_SIZE = int(_s.value("font_size", 13))
+
+        # 应用样式到整个 app（让所有子窗口/对话框都继承）
+        _app = QApplication.instance()
+        _app.setStyleSheet(build_style())
+        _app.setFont(QFont("Microsoft YaHei UI", CURRENT_FONT_SIZE))
         
         # 读取窗口大小和位置
         self.restore_window_geometry()
         
         # 设置窗口属性
         self.setWindowTitle("工具管理器")
-        self.setMinimumSize(800, 800)
-        # self.resize(800, 600)  # 由restore_window_geometry控制
+        self.setMinimumSize(900, 600)
         self.setWindowIcon(QIcon(resource_path("icon.png")))
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-        
-        # 启用亚克力效果
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_NoSystemBackground)
         
         # 初始化调整大小相关属性
         self.resizing = False
@@ -1762,21 +1722,21 @@ class ToolManagerApp(QMainWindow):
         
         # 创建阴影效果
         self.shadow = QGraphicsDropShadowEffect(self)
-        self.shadow.setBlurRadius(40)
-        self.shadow.setColor(QColor(0, 0, 0, 80))
-        self.shadow.setOffset(0, 10)
+        self.shadow.setBlurRadius(20)
+        self.shadow.setColor(QColor(0, 0, 0, 40))
+        self.shadow.setOffset(0, 4)
         self.central_widget.setGraphicsEffect(self.shadow)
-        
+
         # 设置中央窗口部件
         self.setCentralWidget(self.central_widget)
         
         # 创建主布局
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(25, 25, 25, 25)
-        self.main_layout.setSpacing(20)
+        self.main_layout.setContentsMargins(0, 0, 0, 12)
+        self.main_layout.setSpacing(8)
         
         # 初始化数据属性
-        self.environments = {}
+        self.environments = []
         self.categories = []
         self.shortcut_dirs = []
         self.categories_order = []
@@ -1789,11 +1749,10 @@ class ToolManagerApp(QMainWindow):
         # 初始化界面
         self.init_ui()
         self.toast = ToastManager(self)
-        
+
         # 加载配置
         self.load_config()
-        self.toast = ToastManager(self)
-        
+
         # 设置连接
         self.setup_connections()
         
@@ -1808,7 +1767,7 @@ class ToolManagerApp(QMainWindow):
         
         # 窗口淡入动画
         self.fade_in_animation()
-        self.tool_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.tool_list.setSelectionMode(QAbstractItemView.MultiSelection)
         # 可选：点空白取消多选更舒服
         self.tool_list.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.tool_list.itemSelectionChanged.connect(self.sync_tool_card_selection_style)
@@ -1831,15 +1790,15 @@ class ToolManagerApp(QMainWindow):
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu{
-                background-color: rgba(17, 24, 39, 0.96);
-                border: 1px solid rgba(255,255,255,0.10);
-                border-radius: 12px;
-                padding: 6px;
-                color: #e5e7eb;
+                background-color: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 4px;
+                color: #1e293b;
             }
-            QMenu::item{ padding: 8px 12px; border-radius: 10px; }
-            QMenu::item:selected{ background-color: rgba(255,255,255,0.08); }
-            QMenu::separator{ height: 1px; background: rgba(255,255,255,0.08); margin: 6px 8px; }
+            QMenu::item{ padding: 7px 14px; border-radius: 5px; color: #374151; }
+            QMenu::item:selected{ background-color: #eff6ff; color: #2563eb; }
+            QMenu::separator{ height: 1px; background: #e2e8f0; margin: 4px 8px; }
         """)
 
         if multi:
@@ -1922,161 +1881,6 @@ class ToolManagerApp(QMainWindow):
 
         elif chosen == act_del:
             self._delete_one_tool(category, tool, name=name, path=path)
-
-
-        category = item.data(Qt.UserRole)
-        tool = item.data(Qt.UserRole + 1) or {}
-        name = tool.get("display_name", "未命名工具")
-        path = tool.get("path", "")
-
-        menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu{
-                background-color: rgba(17, 24, 39, 0.96);
-                border: 1px solid rgba(255,255,255,0.10);
-                border-radius: 12px;
-                padding: 6px;
-                color: #e5e7eb;
-            }
-            QMenu::item{
-                padding: 8px 12px;
-                border-radius: 10px;
-            }
-            QMenu::item:selected{
-                background-color: rgba(255,255,255,0.08);
-            }
-            QMenu::separator{
-                height: 1px;
-                background: rgba(255,255,255,0.08);
-                margin: 6px 8px;
-            }
-        """)
-
-        act_run = menu.addAction("▶ 运行")
-        act_open = menu.addAction("📁 打开目录")
-        act_copy = menu.addAction("📋 复制路径")
-        menu.addSeparator()
-        act_edit = menu.addAction("✏️ 编辑…")
-        act_move = menu.addAction("🗂 移动到分类…")
-        menu.addSeparator()
-        act_del = menu.addAction("🗑 删除")
-        # 删除项更危险一点：可以加个红色提示（Qt 样式不太好单独染色，先保持一致）
-
-        chosen = menu.exec_(self.tool_list.mapToGlobal(pos))
-        if not chosen:
-            return
-
-        if chosen == act_run:
-            tmp = QListWidgetItem(name)
-            tmp.setData(Qt.UserRole, category)
-            # 复用你的 run_tool（它内部会根据当前选中/或其他逻辑运行）
-            self.run_tool(tmp)
-
-        elif chosen == act_open:
-            try:
-                d = os.path.dirname(path)
-                if d and os.path.exists(d):
-                    os.startfile(d)
-                else:
-                    QMessageBox.warning(self, "错误", "目录不存在或路径为空")
-            except Exception as e:
-                QMessageBox.warning(self, "错误", f"打开失败: {e}")
-
-        elif chosen == act_copy:
-            QApplication.clipboard().setText(path or "")
-            if hasattr(self, "toast"):
-                self.toast.show("已复制路径", kind="success")
-            else:
-                QMessageBox.information(self, "提示", "已复制路径")
-
-        elif chosen == act_edit:
-            # 最小可用编辑：编辑名称 & 路径（不依赖你原来的编辑弹窗）
-            new_name, ok1 = QInputDialog.getText(self, "编辑工具", "显示名称：", text=name)
-            if not ok1:
-                return
-            new_path, ok2 = QInputDialog.getText(self, "编辑工具", "路径：", text=path)
-            if not ok2:
-                return
-
-            tool["display_name"] = new_name.strip() or name
-            tool["path"] = new_path.strip()
-
-            # 写回数据结构
-            try:
-                tools = self.categories.get(category, [])
-                for t in tools:
-                    if t is tool:
-                        break
-                    # 兜底：按原 name+path 匹配
-                    if t.get("display_name") == name and t.get("path") == path:
-                        t.update(tool)
-                        break
-            except Exception:
-                pass
-
-            if hasattr(self, "save_config"):
-                self.save_config()
-            if hasattr(self, "toast"):
-                self.toast.show("工具已更新", kind="success")
-            self.update_tool_list()
-
-        elif chosen == act_move:
-            cats = list(getattr(self, "categories_order", [])) or list(self.categories.keys())
-            if not cats:
-                return
-            target, ok = QInputDialog.getItem(self, "移动到分类", "选择目标分类：", cats, editable=False)
-            if not ok or not target or target == category:
-                return
-
-            # 从原分类移除
-            src_list = self.categories.get(category, [])
-            moved_tool = None
-            for i, t in enumerate(list(src_list)):
-                if t is tool or (t.get("display_name") == name and t.get("path") == path):
-                    moved_tool = t
-                    del src_list[i]
-                    break
-
-            if moved_tool is None:
-                return
-
-            # 加到目标分类
-            self.categories.setdefault(target, []).append(moved_tool)
-
-            if hasattr(self, "save_config"):
-                self.save_config()
-            if hasattr(self, "toast"):
-                self.toast.show(f"已移动到：{target}", kind="success")
-
-            # 让界面更符合直觉：切到目标分类
-            for i in range(self.category_list.count()):
-                if self.category_list.item(i).text() == target:
-                    self.category_list.setCurrentRow(i)
-                    break
-
-            self.update_tool_list()
-
-        elif chosen == act_del:
-            # 删除确认：优先用你做过的 epic_confirm，否则用 QMessageBox
-            ok = False
-            if hasattr(self, "epic_confirm"):
-                ok = self.epic_confirm("确认删除", f"确定要删除工具：{name} 吗？")
-            else:
-                ok = QMessageBox.question(self, "确认删除", f"确定要删除工具：{name} 吗？") == QMessageBox.Yes
-            if not ok:
-                return
-
-            tools = self.categories.get(category, [])
-            for i, t in enumerate(list(tools)):
-                if t is tool or (t.get("display_name") == name and t.get("path") == path):
-                    del tools[i]
-                    break
-
-            if hasattr(self, "save_config"):
-                self.save_config()
-            if hasattr(self, "toast"):
-                self.toast.show("工具已删除", kind="success")
-            self.update_tool_list()
 
     def batch_delete_selected_tools(self):
         items = self.tool_list.selectedItems()
@@ -2245,14 +2049,7 @@ class ToolManagerApp(QMainWindow):
 
 
     def enable_acrylic_effect(self):
-        try:
-            hwnd = self.winId().__int__()
-            if enable_acrylic_effect(hwnd):
-                logger.info("Windows亚克力效果启用成功")
-            else:
-                logger.info("Windows亚克力效果启用失败，使用CSS模糊效果")
-        except Exception as e:
-            logger.warning(f"启用亚克力效果时发生错误: {str(e)}")
+        pass  # 浅色主题不需要亚克力效果
     def epic_confirm(self, title: str, text: str) -> bool:
         box = QMessageBox(self)
         box.setWindowTitle(title)
@@ -2263,16 +2060,17 @@ class ToolManagerApp(QMainWindow):
         box.setDefaultButton(no)
         # 暗色样式覆盖系统 MessageBox（先救急，后续可替换成自定义弹窗）
         box.setStyleSheet("""
-            QMessageBox{background-color:#0f1115; color:#e5e7eb;}
-            QLabel{color:#e5e7eb;}
+            QMessageBox{background-color:#ffffff; color:#1e293b;}
+            QLabel{color:#1e293b;}
             QPushButton{
-                background-color: rgba(255,255,255,0.06);
-                border: 1px solid rgba(255,255,255,0.10);
-                border-radius: 10px;
-                padding: 8px 14px;
-                font-weight: 700;
+                background-color: #f1f5f9;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-weight: 600;
+                color: #374151;
             }
-            QPushButton:hover{background-color: rgba(255,255,255,0.09);}
+            QPushButton:hover{background-color: #e2e8f0;}
         """)
         box.exec_()
         return box.clickedButton() == yes
@@ -2378,15 +2176,6 @@ class ToolManagerApp(QMainWindow):
                 logger.info("显示主窗口")
         except Exception as e:
             logger.error(f"切换窗口状态时发生错误: {str(e)}")
-    
-    def closeEvent(self, event):
-        try:
-            self.save_window_geometry()
-            self.hide()
-            event.ignore()
-        except Exception as e:
-            logger.error(f"处理窗口关闭事件时发生错误: {str(e)}")
-            event.accept()
 
     def show_settings(self):
         try:
@@ -2405,6 +2194,16 @@ class ToolManagerApp(QMainWindow):
             logger.info("设置对话框关闭，已恢复快捷键响应")
             
             if result == QDialog.Accepted:
+                # 刷新内联样式（主题/字体可能变更）
+                self._refresh_inline_styles()
+
+                # 字体/主题变化时刷新卡片
+                self.update_tool_list()
+                if hasattr(self, "update_env_list"):
+                    self.update_env_list()
+                if hasattr(self, "update_shortcut_list"):
+                    self.update_shortcut_list()
+
                 # 获取设置后的快捷键
                 new_hotkey = QSettings("TBox", "TBox").value("hotkey", "Ctrl+Alt+T")
                 
@@ -2629,141 +2428,225 @@ class ToolManagerApp(QMainWindow):
         self.scale_anim.setEasingCurve(QEasingCurve.OutQuart)
         self.scale_anim.start()
 
+    def show_env_context_menu(self, pos):
+        if not self.env_list.itemAt(pos):
+            return
+        menu = QMenu(self)
+        act_open = QAction("打开目录", self)
+        act_del = QAction("删除选中", self)
+        act_open.triggered.connect(self.open_selected_env_dir)
+        act_del.triggered.connect(self.delete_environment)
+        menu.addAction(act_open)
+        menu.addSeparator()
+        menu.addAction(act_del)
+        menu.exec_(self.env_list.mapToGlobal(pos))
+
+    def open_selected_env_dir(self):
+        it = self.env_list.currentItem()
+        if not it:
+            return
+        env = it.data(Qt.UserRole + 1) or {}
+        path = env.get("path", "")
+        if path and os.path.exists(path):
+            os.startfile(path)
+        else:
+            QMessageBox.warning(self, "错误", "路径不存在！")
+    def show_shortcut_context_menu(self, pos):
+        if not self.shortcut_list.itemAt(pos):
+            return
+        menu = QMenu(self)
+        act_open = QAction("打开", self)
+        act_del = QAction("删除选中", self)
+        act_open.triggered.connect(self.open_selected_shortcut)
+        act_del.triggered.connect(self.delete_shortcut)
+        menu.addAction(act_open)
+        menu.addSeparator()
+        menu.addAction(act_del)
+        menu.exec_(self.shortcut_list.mapToGlobal(pos))
+
+    def open_selected_shortcut(self):
+        it = self.shortcut_list.currentItem()
+        if not it:
+            return
+        sc = it.data(Qt.UserRole + 1) or {}
+        name = sc.get("display_name", "")
+        tmp = QListWidgetItem(name)
+        self.open_shortcut(tmp)  # 复用你已有逻辑 :contentReference[oaicite:7]{index=7}
+
     def init_ui(self):
         # 创建自定义标题栏
         self.title_bar = TitleBar(self)
         self.main_layout.addWidget(self.title_bar)
-        
-        # 搜索框
+
+        # 搜索框 + 操作按钮行
+        search_bar = QWidget()
+        search_bar.setStyleSheet("QWidget{background: transparent;}")
+        search_bar_layout = QHBoxLayout(search_bar)
+        search_bar_layout.setContentsMargins(0, 0, 0, 0)
+        search_bar_layout.setSpacing(8)
+
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("全局搜索工具（支持模糊匹配）...")
-        self.main_layout.addWidget(self.search_input)
-        
+        self.search_input.setPlaceholderText("🔍  搜索工具...")
+        search_bar_layout.addWidget(self.search_input, 1)
+
+        # 工具按钮组 — 使用 property class 让全局主题样式生效
+        self.tool_btn_group = QWidget()
+        tg = QHBoxLayout(self.tool_btn_group)
+        tg.setContentsMargins(0,0,0,0); tg.setSpacing(8)
+        self.add_tool_btn = QPushButton("添加工具")
+        self.add_tool_btn.setProperty("class", "primary")
+        self.del_tool_btn = QPushButton("删除工具")
+        settings_btn_top = QPushButton("设置")
+        settings_btn_top.clicked.connect(self.show_settings)
+        tg.addWidget(self.add_tool_btn)
+        tg.addWidget(self.del_tool_btn)
+        tg.addWidget(settings_btn_top)
+
+        # 快捷方式按钮组
+        self.sc_btn_group = QWidget()
+        sg = QHBoxLayout(self.sc_btn_group)
+        sg.setContentsMargins(0,0,0,0); sg.setSpacing(8)
+        self.add_sc_btn = QPushButton("添加快捷方式")
+        self.add_sc_btn.setProperty("class", "primary")
+        self.del_sc_btn = QPushButton("删除快捷方式")
+        sg.addWidget(self.add_sc_btn)
+        sg.addWidget(self.del_sc_btn)
+        self.sc_btn_group.setVisible(False)
+
+        # 环境按钮组
+        self.env_btn_group = QWidget()
+        eg = QHBoxLayout(self.env_btn_group)
+        eg.setContentsMargins(0,0,0,0); eg.setSpacing(8)
+        self.add_env_btn = QPushButton("添加环境")
+        self.add_env_btn.setProperty("class", "primary")
+        self.del_env_btn = QPushButton("删除环境")
+        eg.addWidget(self.add_env_btn)
+        eg.addWidget(self.del_env_btn)
+        self.env_btn_group.setVisible(False)
+
+        search_bar_layout.addWidget(self.tool_btn_group)
+        search_bar_layout.addWidget(self.sc_btn_group)
+        search_bar_layout.addWidget(self.env_btn_group)
+        self.main_layout.addWidget(search_bar)
+
         splitter = QSplitter(Qt.Horizontal)
-        self.main_layout.addWidget(splitter)
-        
+        splitter.setStyleSheet(f"QSplitter::handle{{background:{THEMES[CURRENT_THEME]['sep']}; width:1px;}}")
+
+        # 用一个容器包住 splitter，加左右边距
+        content_wrapper = QWidget()
+        content_wrapper.setStyleSheet("QWidget{background:transparent;}")
+        cw_layout = QHBoxLayout(content_wrapper)
+        cw_layout.setContentsMargins(12, 0, 12, 0)
+        cw_layout.addWidget(splitter)
+        self.main_layout.addWidget(content_wrapper, 1)
+
+        # 搜索栏也加边距
+        search_bar.setContentsMargins(12, 0, 12, 0)
+
         # 左侧分类面板
         left_panel = QWidget()
-        left_layout = QVBoxLayout()
-        left_panel.setLayout(left_layout)
-        
-        # 分类搜索框容器
-        category_search_container = QWidget()
-        category_search_layout = QHBoxLayout(category_search_container)
-        category_search_layout.setContentsMargins(0, 0, 0, 0)
-        category_search_layout.setSpacing(5)
-        
+        left_panel.setFixedWidth(180)
+        left_panel.setStyleSheet("QWidget{background:transparent;}")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 8, 0)
+        left_layout.setSpacing(6)
+
+        # 分类标题行
+        cat_header = QHBoxLayout()
+        self.category_title_label = QLabel("工具分类")
+        self.category_title_label.setStyleSheet("QLabel{font-size:13px;font-weight:700;color:#1e293b;}")
+        self.category_count_label = QLabel("")
+        self.category_count_label.setStyleSheet("QLabel{font-size:12px;color:#94a3b8;}")
+        cat_header.addWidget(self.category_title_label)
+        cat_header.addWidget(self.category_count_label)
+        cat_header.addStretch()
+
+        self.add_cat_btn = QPushButton("+")
+        self.add_cat_btn.setFixedSize(24, 24)
+        self.add_cat_btn.setToolTip("添加新分类")
+        self.add_cat_btn.setStyleSheet(f"""
+            QPushButton{{background:{THEMES[CURRENT_THEME]['primary']};border:none;border-radius:4px;
+                color:{THEMES[CURRENT_THEME]['primary_text']};font-size:16px;font-weight:700;padding:0;}}
+            QPushButton:hover{{background:{THEMES[CURRENT_THEME]['primary_hover']};}}
+        """)
+        cat_header.addWidget(self.add_cat_btn)
+
+        self.del_cat_btn = QPushButton("−")
+        self.del_cat_btn.setFixedSize(24, 24)
+        self.del_cat_btn.setToolTip("删除选中分类")
+        self.del_cat_btn.setStyleSheet(f"""
+            QPushButton{{background:{THEMES[CURRENT_THEME]['danger_bg']};border:none;border-radius:4px;
+                color:{THEMES[CURRENT_THEME]['danger_text']};font-size:16px;font-weight:700;padding:0;}}
+            QPushButton:hover{{background:{THEMES[CURRENT_THEME]['danger_hover']};}}
+        """)
+        cat_header.addWidget(self.del_cat_btn)
+        left_layout.addLayout(cat_header)
+
+        # 分类搜索框 + 清空按钮
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(0)
+
         self.category_search_input = QLineEdit()
         self.category_search_input.setPlaceholderText("搜索分类...")
+        self.category_search_input.setFixedHeight(28)
         self.category_search_input.setStyleSheet("""
-            QLineEdit {
-                margin: 8px 0;
-                padding: 8px 12px;
-                font-size: 13px;
-                border-radius: 8px;
-            }
+            QLineEdit{background:#fff;border:1px solid #e2e8f0;border-radius:5px;
+                padding:2px 8px;font-size:12px;}
         """)
-        
-        # 清空搜索按钮
+        search_row.addWidget(self.category_search_input, 1)
+
         self.clear_category_search_btn = QPushButton("×")
-        self.clear_category_search_btn.setFixedSize(28, 28)
+        self.clear_category_search_btn.setFixedSize(20, 20)
+        self.clear_category_search_btn.setVisible(False)
+        self.clear_category_search_btn.setToolTip("清空搜索")
         self.clear_category_search_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                color: #6b7280;
-                border: 1px solid rgba(156, 163, 175, 120);
-                border-radius: 14px;
-                font-size: 16px;
-                font-weight: bold;
-                margin: 8px 0;
-            }
-            QPushButton:hover {
-                background: rgba(156, 163, 175, 80);
-                border-color: rgba(156, 163, 175, 180);
-                color: #374151;
-            }
-            QPushButton:pressed {
-                background: rgba(156, 163, 175, 120);
-                color: #1f2937;
-            }
+            QPushButton{background:transparent;border:none;color:#94a3b8;font-size:14px;font-weight:700;}
+            QPushButton:hover{color:#64748b;}
         """)
         self.clear_category_search_btn.clicked.connect(self.clear_category_search)
-        self.clear_category_search_btn.setVisible(False)  # 初始隐藏
-        
-        category_search_layout.addWidget(self.category_search_input)
-        category_search_layout.addWidget(self.clear_category_search_btn)
-        left_layout.addWidget(category_search_container)
-        
-        category_header = QWidget()
-        header_layout = QHBoxLayout()
-        
-        # 分类标题和搜索结果统计
-        self.category_title_label = QLabel("工具分类")
-        self.category_title_label.setStyleSheet("""
-            QLabel{
-            font-size: 18px;
-            font-weight: 800;
-            color: #f3f4f6;
-            margin-bottom: 5px;
-        }
-        """)
-        
-        self.category_count_label = QLabel("")
-        self.category_count_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                color: #64748b;
-                margin: 0;
-                padding: 0 5px;
-            }
-        """)
-        
-        header_layout.addWidget(self.category_title_label)
-        header_layout.addWidget(self.category_count_label)
-        header_layout.addStretch()
-        
-        # 创建按钮容器，添加间距
-        button_container = QWidget()
-        button_layout = QHBoxLayout(button_container)
-        button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.setSpacing(8)  # 按钮之间的间距
-        
-        self.add_cat_btn = self.create_icon_button("", "#FFFFFF", "plus.png")
-        self.del_cat_btn = self.create_icon_button("", "#FFFFFF", "delete.png")
-        
-        # 为分类按钮添加工具提示
-        self.add_cat_btn.setToolTip("添加新分类")
-        self.del_cat_btn.setToolTip("删除选中分类")
-        
-        # 设置按钮对象名称，便于样式定制
-        #self.add_cat_btn.setObjectName("addCategoryBtn")
-        #self.del_cat_btn.setObjectName("deleteCategoryBtn")
-        
-        button_layout.addWidget(self.add_cat_btn)
-        button_layout.addWidget(self.del_cat_btn)
-        
-        header_layout.addWidget(button_container)
-        category_header.setLayout(header_layout)
-        
-        left_layout.addWidget(category_header)
+        search_row.addWidget(self.clear_category_search_btn)
+
+        left_layout.addLayout(search_row)
+
         self.category_list = self.create_list_widget()
+        self.category_list.setSelectionMode(QListWidget.SingleSelection)
         self.category_list.setDragEnabled(True)
         self.category_list.setDragDropMode(QListWidget.InternalMove)
         self.category_list.model().rowsMoved.connect(self.update_category_order)
-        left_layout.addWidget(self.category_list)
-        
+        self.category_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.category_list.customContextMenuRequested.connect(self.on_category_context_menu)
+
+        left_layout.addWidget(self.category_list, 1)
+
         # 右侧主面板
         right_panel = QTabWidget()
+        right_panel.setStyleSheet("""
+            QTabWidget::pane{border:none;background:transparent;}
+            QTabBar::tab{background:transparent;border:none;color:#64748b;
+                padding:8px 16px;font-size:13px;}
+            QTabBar::tab:selected{color:#2563eb;border-bottom:2px solid #3b82f6;font-weight:600;}
+            QTabBar::tab:hover{color:#1e293b;}
+        """)
 
-        # 工具管理
+        # 工具管理 tab
         tool_tab = QWidget()
-        tool_layout = QVBoxLayout()
-        tool_layout.addWidget(QLabel("工具列表"))
+        tool_tab.setStyleSheet("QWidget{background:transparent;}")
+        tool_layout = QVBoxLayout(tool_tab)
+        tool_layout.setContentsMargins(0, 8, 0, 0)
+        tool_layout.setSpacing(8)
 
         self.tool_list = self.create_list_widget()
+        self.tool_list.setViewMode(QListWidget.IconMode)
+        self.tool_list.setResizeMode(QListWidget.Adjust)
+        self.tool_list.setWrapping(True)
+        self.tool_list.setUniformItemSizes(False)
+        self.tool_list.setStyleSheet("""
+            QListWidget{background:transparent;border:none;}
+            QListWidget::item{background:transparent;border:none;padding:4px;}
+        """)
         self.tool_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tool_list.customContextMenuRequested.connect(self.show_tool_context_menu)
-
 
         self.empty_state = EmptyStateWidget(
             title="该分类下暂无工具",
@@ -2774,53 +2657,32 @@ class ToolManagerApp(QMainWindow):
         )
 
         self.tools_stack = QStackedLayout()
-        self.tools_stack.addWidget(self.empty_state)  # 0
-        self.tools_stack.addWidget(self.tool_list)    # 1
-        # ===== 批量操作条（默认隐藏）=====
+        self.tools_stack.addWidget(self.empty_state)
+        self.tools_stack.addWidget(self.tool_list)
+
+        # 批量操作条
         self.bulk_bar = QFrame()
         self.bulk_bar.setObjectName("bulkBar")
         self.bulk_bar.setVisible(False)
-
         bulk_layout = QHBoxLayout(self.bulk_bar)
-        bulk_layout.setContentsMargins(12, 10, 12, 10)
-        bulk_layout.setSpacing(10)
-
+        bulk_layout.setContentsMargins(12, 8, 12, 8)
+        bulk_layout.setSpacing(8)
         self.bulk_label = QLabel("已选中 0 项")
-        self.bulk_label.setStyleSheet("QLabel{color: rgba(229,231,235,0.85); font-weight: 700;}")
-
-        self.btn_bulk_move = QPushButton("🗂 移动到分类")
-        self.btn_bulk_delete = QPushButton("🗑 删除")
-        self.btn_bulk_clear = QPushButton("✖ 取消选择")
-
-        self.tool_list.itemSelectionChanged.connect(self.update_bulk_bar)
-        self.update_bulk_bar()
-
-        # 按钮样式更像“操作条”
-        self.bulk_bar.setStyleSheet("""
-            QFrame#bulkBar{
-                background-color: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 14px;
-            }
-        """)
+        self.bulk_label.setStyleSheet("QLabel{color:#2563eb;font-weight:700;}")
+        self.btn_bulk_move = QPushButton("移动到分类")
+        self.btn_bulk_delete = QPushButton("删除")
         self.btn_bulk_delete.setStyleSheet("""
-            QPushButton{
-                background-color: rgba(239,68,68,0.16);
-                border: 1px solid rgba(239,68,68,0.28);
-                color: #f3f4f6;
-                border-radius: 12px;
-                padding: 10px 14px;
-                font-weight: 800;
-            }
-            QPushButton:hover{ background-color: rgba(239,68,68,0.22); }
+            QPushButton{background:#fff0f0;border:1px solid #fca5a5;color:#ef4444;
+                border-radius:5px;padding:4px 12px;font-weight:600;}
+            QPushButton:hover{background:#fee2e2;}
         """)
-
+        self.btn_bulk_clear = QPushButton("取消选择")
         bulk_layout.addWidget(self.bulk_label, 1)
         bulk_layout.addWidget(self.btn_bulk_move)
         bulk_layout.addWidget(self.btn_bulk_delete)
         bulk_layout.addWidget(self.btn_bulk_clear)
-
-        tool_layout.addWidget(self.bulk_bar)
+        self.tool_list.itemSelectionChanged.connect(self.update_bulk_bar)
+        self.update_bulk_bar()
         self.btn_bulk_move.clicked.connect(self.batch_move_selected_tools)
         self.btn_bulk_delete.clicked.connect(self.batch_delete_selected_tools)
         self.btn_bulk_clear.clicked.connect(self.tool_list.clearSelection)
@@ -2831,132 +2693,179 @@ class ToolManagerApp(QMainWindow):
         tools_container.setObjectName("toolsPanel")
         tools_container.setAttribute(Qt.WA_StyledBackground, True)
 
-        tool_layout.addWidget(tools_container, 1)  # ✅ 给 stretch=1 更稳
+        tool_layout.addWidget(self.bulk_bar)
+        tool_layout.addWidget(tools_container, 1)
 
-        tool_tab.setLayout(tool_layout)            # ✅ 别漏
-
-
-        # 工具按钮布局 - 修复水平对齐
-        tool_btn_layout = QHBoxLayout()
-        tool_btn_layout.setContentsMargins(0, 0, 0, 0)
-        tool_btn_layout.setSpacing(10)
-        
-        self.add_tool_btn = self.create_icon_button("添加工具", "rgba(59, 130, 246, 220)", "tool.png")
-        self.del_tool_btn = self.create_icon_button("删除工具", "rgba(239, 68, 68, 220)", "delete.png")
-        
-        # 确保按钮高度一致
-        self.add_tool_btn.setFixedSize(120,36)
-        self.del_tool_btn.setFixedSize(120,36)
-        
-        tool_btn_layout.addWidget(self.add_tool_btn)
-        tool_btn_layout.addWidget(self.del_tool_btn)
-        tool_btn_layout.addStretch()  # 添加弹性空间
-        tool_layout.addLayout(tool_btn_layout)
-        tool_tab.setLayout(tool_layout)
-        
-        # 快捷方式管理
+        # 快捷方式 tab
         shortcut_tab = QWidget()
-        shortcut_layout = QVBoxLayout()
-        shortcut_layout.addWidget(QLabel("快捷方式"))
+        shortcut_tab.setStyleSheet("QWidget{background:transparent;}")
+        shortcut_layout = QVBoxLayout(shortcut_tab)
+        shortcut_layout.setContentsMargins(0, 8, 0, 0)
+        shortcut_layout.setSpacing(8)
+
+        self.shortcut_empty_state = EmptyStateWidget(
+            title="暂无快捷方式",
+            subtitle="添加目录或文件快捷方式以便快速访问",
+            button_text="添加快捷方式",
+            on_action=self.add_shortcut,
+            parent=self
+        )
+
         self.shortcut_list = self.create_list_widget()
-        shortcut_layout.addWidget(self.shortcut_list)
-        
-        # 快捷方式按钮布局 - 修复水平对齐
-        sc_btn_layout = QHBoxLayout()
-        sc_btn_layout.setContentsMargins(0, 0, 0, 0)
-        sc_btn_layout.setSpacing(10)
-        
-        self.add_sc_btn = self.create_icon_button("添加快捷方式", "rgba(59, 130, 246, 220)", "shortcut.png")
-        self.del_sc_btn = self.create_icon_button("删除快捷方式", "rgba(239, 68, 68, 220)", "delete.png")
-        
-        # 确保按钮高度一致
-        self.add_sc_btn.setFixedHeight(36)
-        self.del_sc_btn.setFixedHeight(36)
-        
-        sc_btn_layout.addWidget(self.add_sc_btn)
-        sc_btn_layout.addWidget(self.del_sc_btn)
-        sc_btn_layout.addStretch()  # 添加弹性空间
-        shortcut_layout.addLayout(sc_btn_layout)
-        shortcut_tab.setLayout(shortcut_layout)
-        
-        # 环境管理
+        self.shortcut_list.setViewMode(QListWidget.IconMode)
+        self.shortcut_list.setResizeMode(QListWidget.Adjust)
+        self.shortcut_list.setWrapping(True)
+        self.shortcut_list.setUniformItemSizes(False)
+        self.shortcut_list.setStyleSheet("QListWidget{background:transparent;border:none;} QListWidget::item{background:transparent;border:none;padding:4px;}")
+        self.shortcut_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.shortcut_list.customContextMenuRequested.connect(self.show_shortcut_context_menu)
+        self.shortcut_list.itemSelectionChanged.connect(self.update_shortcut_bulk_bar)
+
+        self.sc_stack = QStackedLayout()
+        self.sc_stack.addWidget(self.shortcut_empty_state)
+        self.sc_stack.addWidget(self.shortcut_list)
+        shortcut_layout.addLayout(self.sc_stack)
+
+        # 环境 tab
         env_tab = QWidget()
-        env_layout = QVBoxLayout()
-        env_layout.addWidget(QLabel("环境配置"))
+        env_tab.setStyleSheet("QWidget{background:transparent;}")
+        env_layout = QVBoxLayout(env_tab)
+        env_layout.setContentsMargins(0, 8, 0, 0)
+        env_layout.setSpacing(8)
+
+        self.env_empty_state = EmptyStateWidget(
+            title="暂无运行环境",
+            subtitle="添加 Python 或 Java 环境来运行脚本和程序",
+            button_text="添加环境",
+            on_action=self.add_environment,
+            parent=self
+        )
+
         self.env_list = self.create_list_widget()
-        env_layout.addWidget(self.env_list)
-        
-        # 环境按钮布局 - 修复水平对齐
-        env_btn_layout = QHBoxLayout()
-        env_btn_layout.setContentsMargins(0, 0, 0, 0)
-        env_btn_layout.setSpacing(10)
-        
-        self.add_env_btn = self.create_icon_button("添加环境", "rgba(59, 130, 246, 220)", "environment.png")
-        self.del_env_btn = self.create_icon_button("删除环境", "rgba(239, 68, 68, 220)", "delete.png")
-        
-        # 确保按钮高度一致
-        self.add_env_btn.setFixedHeight(36)
-        self.del_env_btn.setFixedHeight(36)
-        
-        env_btn_layout.addWidget(self.add_env_btn)
-        env_btn_layout.addWidget(self.del_env_btn)
-        env_btn_layout.addStretch()  # 添加弹性空间
-        env_layout.addLayout(env_btn_layout)
-        env_tab.setLayout(env_layout)
-        
+        self.env_list.setViewMode(QListWidget.IconMode)
+        self.env_list.setResizeMode(QListWidget.Adjust)
+        self.env_list.setWrapping(True)
+        self.env_list.setUniformItemSizes(False)
+        self.env_list.setStyleSheet("QListWidget{background:transparent;border:none;} QListWidget::item{background:transparent;border:none;padding:4px;}")
+        self.env_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.env_list.customContextMenuRequested.connect(self.show_env_context_menu)
+        self.env_list.itemSelectionChanged.connect(self.update_env_bulk_bar)
+
+        self.env_stack = QStackedLayout()
+        self.env_stack.addWidget(self.env_empty_state)
+        self.env_stack.addWidget(self.env_list)
+        env_layout.addLayout(self.env_stack)
+
         right_panel.addTab(tool_tab, QIcon(resource_path("icons/tool.png")), "工具")
         right_panel.addTab(shortcut_tab, QIcon(resource_path("icons/shortcut.png")), "快捷方式")
         right_panel.addTab(env_tab, QIcon(resource_path("icons/environment.png")), "运行环境")
-        
+
+        def on_tab_changed(idx):
+            self.tool_btn_group.setVisible(idx == 0)
+            self.sc_btn_group.setVisible(idx == 1)
+            self.env_btn_group.setVisible(idx == 2)
+
+        right_panel.currentChanged.connect(on_tab_changed)
+
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
-        splitter.setSizes([250, 750])
-        
-        self.load_data()
+        splitter.setSizes([180, 820])
+        self.shortcut_list.itemSelectionChanged.connect(self.update_shortcut_bulk_bar)
+        self.shortcut_list.itemSelectionChanged.connect(self.sync_shortcut_card_selection_style)
+        self.env_list.itemSelectionChanged.connect(self.update_env_bulk_bar)
+        self.env_list.itemSelectionChanged.connect(self.sync_env_card_selection_style)
 
-    def create_icon_button(self, text, color, icon_name):
-        btn = QPushButton(text)
-        
-        # 根据颜色设置按钮类型
-        if "220, 70, 70" in color or "239, 68, 68" in color:
-            btn.setProperty("class", "danger")
-        elif "34, 197, 94" in color or "22, 163, 74" in color:
-            btn.setProperty("class", "success")
-        
-        # 设置图标
-        icon_path = resource_path(f"icons/{icon_name}")
-        if os.path.exists(icon_path):
-            btn.setIcon(QIcon(icon_path))
-            btn.setIconSize(QSize(18, 18))
-        
-        # 为分类按钮设置特殊样式
-        if icon_name in ["plus.png","tool.png", "delete.png","shortcut.png","environment.png"]:
-            #btn.setFixedSize(36, 36)
-            # 不设置内联样式，让全局样式表生效
-        #else:
-            # 设置按钮样式
-            btn.setStyleSheet("""
-                QPushButton {
-                    font-weight: 600;
-                    font-size: 14px;
-                    padding: 10px 20px;
-                    border-radius: 8px;
-                    min-height: 10px;
-                }
-            """)
-        
-        return btn
+    def update_env_list(self):
+        self.env_list.clear()
+
+        def add_env_card(env: dict):
+            name = env.get("display_name", "未命名环境")
+            path = env.get("path", "")
+            badge = "ENV"
+            short_path = os.path.basename(path) or path
+            subtitle = f"{badge} · {short_path}"
+
+            def open_dir():
+                try:
+                    if os.path.exists(path):
+                        os.startfile(path)
+                    else:
+                        QMessageBox.warning(self, "错误", "路径不存在！")
+                except Exception as e:
+                    QMessageBox.warning(self, "错误", f"打开失败: {str(e)}")
+
+            card = ToolCardWidget(name, subtitle, badge=badge, on_run=open_dir, on_open=open_dir)
+
+            lw_item = QListWidgetItem()
+            lw_item.setSizeHint(QSize(200, max(110, CURRENT_FONT_SIZE * 9)))
+            lw_item.setData(Qt.UserRole, "env")
+            lw_item.setData(Qt.UserRole + 1, env)
+            lw_item.setToolTip(f"路径: {path}")
+
+            self.env_list.addItem(lw_item)
+            self.env_list.setItemWidget(lw_item, card)
+            lw_item.setText("")
+
+        for env in getattr(self, "environments", []):
+            add_env_card(env)
+
+        if hasattr(self, "sync_env_card_selection_style"):
+            self.sync_env_card_selection_style()
+
+        # 空状态切换
+        if hasattr(self, "env_stack"):
+            self.env_stack.setCurrentIndex(1 if self.env_list.count() > 0 else 0)
+
+
+    def update_shortcut_list(self):
+        self.shortcut_list.clear()
+
+        def add_sc_card(sc: dict):
+            name = sc.get("display_name", "未命名快捷方式")
+            path = sc.get("path", "")
+            t = sc.get("type", "dir")
+            badge = "DIR" if t == "dir" else "LNK"
+            short_path = os.path.basename(path) or path
+            subtitle = f"{badge} · {short_path}"
+
+            def open_it():
+                tmp = QListWidgetItem(name)
+                self.open_shortcut(tmp)
+
+            card = ToolCardWidget(name, subtitle, badge=badge, on_run=open_it, on_open=open_it)
+
+            lw_item = QListWidgetItem()
+            lw_item.setSizeHint(QSize(200, max(110, CURRENT_FONT_SIZE * 9)))
+            lw_item.setData(Qt.UserRole, "shortcut")
+            lw_item.setData(Qt.UserRole + 1, sc)
+            lw_item.setToolTip(f"路径: {path}")
+
+            self.shortcut_list.addItem(lw_item)
+            self.shortcut_list.setItemWidget(lw_item, card)
+            lw_item.setText("")
+
+        for sc in getattr(self, "shortcut_dirs", []):
+            add_sc_card(sc)
+
+        if hasattr(self, "sync_shortcut_card_selection_style"):
+            self.sync_shortcut_card_selection_style()
+
+        # 空状态切换
+        if hasattr(self, "sc_stack"):
+            self.sc_stack.setCurrentIndex(1 if self.shortcut_list.count() > 0 else 0)
+
+
 
     def create_list_widget(self):
         list_widget = QListWidget()
         list_widget.setFont(QFont("Microsoft YaHei", 12))
-        list_widget.setAlternatingRowColors(False)  # ✅ 暗色主题下不要交替行
+        list_widget.setAlternatingRowColors(False)
         list_widget.setStyleSheet("QListWidget{background: transparent;} QListWidget::item{background: transparent;}")
         list_widget.setFocusPolicy(Qt.NoFocus)
-        list_widget.setSelectionMode(QListWidget.ExtendedSelection)
+        list_widget.setSelectionMode(QListWidget.MultiSelection)
         list_widget.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        list_widget.setSpacing(10)
+        list_widget.setSpacing(8)
         return list_widget
 
     def load_config(self):
@@ -2995,42 +2904,44 @@ class ToolManagerApp(QMainWindow):
 
     def load_data(self):
         self.category_list.clear()
+        # 添加"全部"虚拟分类
+        self.category_list.addItem("全部")
         self.category_list.addItems(self.categories_order)
-        
+
         # 初始化分类计数显示
         total_count = len(self.categories_order)
         self.category_count_label.setText(f"({total_count})")
-        
-        self.env_list.clear()
-        self.env_list.addItems([e["display_name"] for e in self.environments])
-        self.shortcut_list.clear()
-        self.shortcut_list.addItems([s["display_name"] for s in self.shortcut_dirs])
-        if self.category_list.count() > 0:
-            self.category_list.setCurrentRow(0)
-            self.update_tool_list()
+
+        self.update_env_list()
+        self.update_shortcut_list()
     
     def filter_categories(self):
         """根据搜索关键词过滤分类列表"""
         search_text = self.category_search_input.text().strip().lower()
-        
+
         # 根据搜索框内容显示/隐藏清空按钮
         self.clear_category_search_btn.setVisible(bool(search_text))
-        
+
+        # 阻塞信号，避免 clear/addItems 触发 currentItemChanged 导致 update_tool_list 多次调用
+        self.category_list.blockSignals(True)
         self.category_list.clear()
-        
+
+        # "全部"始终在第一位
+        self.category_list.addItem("全部")
+
         if not search_text:
             # 如果搜索框为空，显示所有分类
             self.category_list.addItems(self.categories_order)
             total_count = len(self.categories_order)
             self.category_count_label.setText(f"({total_count})")
         else:
-            # 过滤匹配的分类
+            # 过滤匹配的分类（"全部"不受搜索影响）
             filtered_categories = [
                 category for category in self.categories_order
                 if search_text in category.lower()
             ]
             self.category_list.addItems(filtered_categories)
-            
+
             # 更新搜索结果统计
             result_count = len(filtered_categories)
             total_count = len(self.categories_order)
@@ -3038,14 +2949,16 @@ class ToolManagerApp(QMainWindow):
                 self.category_count_label.setText(f"(0/{total_count})")
             else:
                 self.category_count_label.setText(f"({result_count}/{total_count})")
-            
+
             # 如果没有匹配结果，显示提示
             if not filtered_categories:
                 no_result_item = QListWidgetItem("未找到匹配的分类")
                 no_result_item.setFlags(Qt.NoItemFlags)  # 设置为不可选择
                 no_result_item.setForeground(QBrush(QColor("#9ca3af")))
                 self.category_list.addItem(no_result_item)
-        
+
+        self.category_list.blockSignals(False)
+
         # 如果有过滤结果，选择第一个
         if self.category_list.count() > 0 and self.category_list.item(0).flags() != Qt.NoItemFlags:
             self.category_list.setCurrentRow(0)
@@ -3061,7 +2974,10 @@ class ToolManagerApp(QMainWindow):
         self.filter_categories()
 
     def update_category_order(self):
-        self.categories_order = [self.category_list.item(i).text() for i in range(self.category_list.count())]
+        self.categories_order = [
+            self.category_list.item(i).text() for i in range(self.category_list.count())
+            if self.category_list.item(i).text() != "全部"
+        ]
         self.save_config()
 
     def perform_search(self):
@@ -3076,11 +2992,14 @@ class ToolManagerApp(QMainWindow):
             tool_name = tool.get("display_name", "未命名工具")
             tool_path = tool.get("path", "")
             ext = os.path.splitext(tool_path)[1].lower().replace(".", "").upper() or "TOOL"
-            subtitle = f"{category} · {ext} · {tool_path}"
+            # 卡片副标题只显示文件名，完整路径在 tooltip
+            short_path = os.path.basename(tool_path) or tool_path
+            subtitle = f"{category} · {ext} · {short_path}"
 
             def run():
                 item = QListWidgetItem(tool_name)
                 item.setData(Qt.UserRole, category)
+                item.setData(Qt.UserRole + 1, tool)
                 self.run_tool(item)
 
             def open_dir():
@@ -3095,15 +3014,16 @@ class ToolManagerApp(QMainWindow):
 
             card = ToolCardWidget(tool_name, subtitle, badge=ext, on_run=run, on_open=open_dir)
             lw_item = QListWidgetItem()
-            lw_item.setSizeHint(QSize(10, 78))
+            lw_item.setSizeHint(QSize(200, max(110, CURRENT_FONT_SIZE * 9)))
             lw_item.setData(Qt.UserRole, category)
             lw_item.setData(Qt.UserRole + 1, tool)
-            lw_item.setToolTip(subtitle)
+            lw_item.setToolTip(f"路径: {tool_path}")
 
             self.tool_list.addItem(lw_item)
             self.tool_list.setItemWidget(lw_item, card)
+            lw_item.setText("")
 
-        # 决定展示哪些工具：搜索优先，否则展示当前分类
+            # 决定展示哪些工具：搜索优先，否则展示当前分类
         keyword = (getattr(self, "search_keyword", "") or "").strip().lower()
 
         if keyword:
@@ -3120,8 +3040,14 @@ class ToolManagerApp(QMainWindow):
 
             if current:
                 category = current.text()
-                for tool in self.categories.get(category, []):
-                    add_card(category, tool)
+                # "全部"虚拟分类：显示所有分类下的工具
+                if category == "全部":
+                    for cat in getattr(self, "categories_order", []):
+                        for tool in self.categories.get(cat, []):
+                            add_card(cat, tool)
+                else:
+                    for tool in self.categories.get(category, []):
+                        add_card(category, tool)
 
         # 空状态切换
         if hasattr(self, "tools_stack"):
@@ -3158,11 +3084,35 @@ class ToolManagerApp(QMainWindow):
             else:
                 QMessageBox.warning(self, "警告", "分类名称已存在！")
 
+    def on_category_context_menu(self, pos):
+        """分类列表右键菜单"""
+        item = self.category_list.itemAt(pos)
+        if not item or item.text() == "全部":
+            return
+        self.category_list.setCurrentItem(item)
+        menu = QMenu(self)
+        del_action = menu.addAction("删除分类")
+        action = menu.exec_(self.category_list.mapToGlobal(pos))
+        if action == del_action:
+            self.delete_category()
+
     def delete_category(self):
         if items := self.category_list.selectedItems():
-            reply = self.toast.show("分类删除完成", kind="success")
+            # 过滤掉"全部"虚拟分类
+            real_items = [item for item in items if item.text() != "全部"]
+            if not real_items:
+                QMessageBox.information(self, "提示", "'全部'分类不可删除")
+                return
+            if len(real_items) != len(items):
+                QMessageBox.information(self, "提示", "'全部'分类不可删除，已自动跳过")
+
+            reply = QMessageBox.question(
+                self, "确认删除",
+                f"确定要删除选中的 {len(real_items)} 个分类吗？",
+                QMessageBox.Yes | QMessageBox.No
+            )
             if reply == QMessageBox.Yes:
-                for item in items:
+                for item in real_items:
                     name = item.text()
                     try:
                         # 删除分类目录
@@ -3177,7 +3127,6 @@ class ToolManagerApp(QMainWindow):
                                     QMessageBox.Yes | QMessageBox.No
                                 )
                                 if force_reply == QMessageBox.Yes:
-                                    import shutil
                                     shutil.rmtree(category_dir)
                                     logger.info(f"已强制删除分类目录: {category_dir}")
                                 else:
@@ -3216,13 +3165,23 @@ class ToolManagerApp(QMainWindow):
             QMessageBox.warning(self, "错误", "请先选择分类！")
             return
 
+        current_text = self.category_list.currentItem().text()
+        if current_text == "全部":
+            if not self.categories_order:
+                QMessageBox.warning(self, "错误", "请先创建分类！")
+                return
+            target_cat, ok = QInputDialog.getItem(self, "选择分类", "请选择要添加到的分类：", self.categories_order, editable=False)
+            if not ok:
+                return
+        else:
+            target_cat = current_text
+
         path, _ = QFileDialog.getOpenFileName(self, "选择工具")
         if not path: return
 
         name, ok = QInputDialog.getText(self, "工具名称", "显示名称:")
         if ok and name:
-            category = self.category_list.currentItem().text()
-            self.categories[category].append({
+            self.categories.setdefault(target_cat, []).append({
                 "path": path,
                 "display_name": name
             })
@@ -3230,21 +3189,29 @@ class ToolManagerApp(QMainWindow):
             self.save_config()
 
     def delete_tool(self):
-        if items := self.tool_list.selectedItems():
-            reply = QMessageBox.question(
-                self, "确认删除", 
-                f"确定要删除 {len(items)} 个工具吗？",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                category = self.category_list.currentItem().text()
-                for item in items:
-                    self.categories[category] = [
-                        t for t in self.categories[category]
-                        if t["display_name"] != item.text()
-                    ]
-                self.update_tool_list()
-                self.save_config()
+        items = self.tool_list.selectedItems()
+        if not items:
+            return
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除 {len(items)} 个工具吗？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            for item in items:
+                category = item.data(Qt.UserRole)
+                tool = item.data(Qt.UserRole + 1)
+                if not category or not tool:
+                    continue
+                src = self.categories.get(category, [])
+                dn = tool.get("display_name")
+                p = tool.get("path")
+                for i, t in enumerate(list(src)):
+                    if t is tool or (t.get("display_name") == dn and t.get("path") == p):
+                        del src[i]
+                        break
+            self.update_tool_list()
+            self.save_config()
 
     def add_environment(self):
         path = QFileDialog.getExistingDirectory(self, "选择环境目录")
@@ -3255,24 +3222,42 @@ class ToolManagerApp(QMainWindow):
                     "path": path,
                     "display_name": name
                 })
-                self.env_list.addItem(name)
+                self.update_env_list()
                 self.save_config()
 
     def delete_environment(self):
-        if items := self.env_list.selectedItems():
-            reply = QMessageBox.question(
-                self, "确认删除", 
-                f"确定要删除 {len(items)} 个环境吗？",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                for item in items:
-                    self.environments = [
-                        e for e in self.environments
-                        if e["display_name"] != item.text()
-                    ]
-                    self.env_list.takeItem(self.env_list.row(item))
-                self.save_config()
+        items = self.env_list.selectedItems()
+        if not items:
+            return
+
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除 {len(items)} 个环境吗？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # ✅ 先收集要删的环境名（从 UserRole+1 拿 dict，别用 item.text()）
+        to_del = set()
+        for it in items:
+            env = it.data(Qt.UserRole + 1)
+            if isinstance(env, dict):
+                to_del.add(env.get("display_name") or env.get("name"))
+            else:
+                # 兜底：如果你后面加了 setText(name)，这里也能用
+                to_del.add(it.text())
+
+        # ✅ 一次性更新数据源
+        self.environments = [
+            e for e in self.environments
+            if (e.get("display_name") or e.get("name")) not in to_del
+        ]
+
+        # ✅ 最后只刷新一次
+        self.update_env_list()
+        self.save_config()
+
 
     def add_shortcut(self):
         types = ["目录", "文件快捷方式"]
@@ -3304,77 +3289,112 @@ class ToolManagerApp(QMainWindow):
                 "display_name": name,
                 "type": "dir" if type_choice == "目录" else "lnk"
             })
-            self.shortcut_list.addItem(name)
+            self.update_shortcut_list()
             self.save_config()
 
     def delete_shortcut(self):
-        if items := self.shortcut_list.selectedItems():
-            reply = QMessageBox.question(
-                self, "确认删除", 
-                f"确定要删除 {len(items)} 个快捷方式吗？",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                for item in items:
-                    self.shortcut_dirs = [
-                        s for s in self.shortcut_dirs
-                        if s["display_name"] != item.text()
-                    ]
-                    self.shortcut_list.takeItem(self.shortcut_list.row(item))
-                self.save_config()
+        items = self.shortcut_list.selectedItems()
+        if not items:
+            return
+
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除 {len(items)} 个快捷方式吗？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        to_del = set()
+        for it in items:
+            sc = it.data(Qt.UserRole + 1)
+            if isinstance(sc, dict):
+                to_del.add(sc.get("display_name") or sc.get("name"))
+            else:
+                to_del.add(it.text())
+
+        self.shortcut_dirs = [
+            s for s in self.shortcut_dirs
+            if (s.get("display_name") or s.get("name")) not in to_del
+        ]
+
+        self.update_shortcut_list()
+        self.save_config()
+
 
     def run_tool(self, item):
-        if self.search_keyword:
-            category = item.data(Qt.UserRole)
-        else:
-            if not (current := self.category_list.currentItem()):
-                QMessageBox.warning(self, "错误", "请先选择分类！")
-                return
-            category = current.text()
-        
-        tool_name = item.text()
-        tool = next(
-            (t for t in self.categories[category] 
-             if t["display_name"] == tool_name),
-            None
-        )
-        if not tool:
-            QMessageBox.warning(self, "错误", "找不到工具路径！")
-            return
-        
-        tool_path = tool["path"]
-        work_dir = os.path.dirname(tool_path)
-        ext = os.path.splitext(tool_path)[1].lower()
+        try:
+            # --- 1) 类型保险 ---
+            if not isinstance(self.categories, dict):
+                self.categories = {}
+            if not isinstance(self.environments, list):
+                self.environments = []
 
-        env_path = None
-        if ext in ('.py', '.jar'):
-            env_names = [e["display_name"] for e in self.environments]
-            if not env_names:
-                QMessageBox.warning(self, "错误", "请先添加运行环境！")
+            category = item.data(Qt.UserRole)
+            if not category:
+                current = self.category_list.currentItem()
+                if not current:
+                    QMessageBox.warning(self, "错误", "请先选择分类！")
+                    return
+                category = current.text()
+
+            tool_name = ""
+            tool_data = item.data(Qt.UserRole + 1)
+            if isinstance(tool_data, dict):
+                tool_name = tool_data.get("display_name", "")
+            if not tool_name:
+                QMessageBox.warning(self, "错误", "无法获取工具名称")
                 return
-                
-            # 使用自定义的环境选择对话框
-            env_dialog = EnvironmentSelectionDialog(
-                parent=self,
-                environments=env_names,
-                env_details=self.environments,  # 传递完整的环境信息
-                title="选择运行环境"
-            )
-            
-            if env_dialog.exec_() == QDialog.Accepted:
+
+            tools = self.categories.get(category, [])
+            tool = next((t for t in tools if t.get("display_name") == tool_name), None)
+            if not tool:
+                QMessageBox.warning(self, "错误", "找不到工具路径！")
+                return
+
+            tool_path = tool.get("path", "")
+            if not tool_path:
+                QMessageBox.warning(self, "错误", "工具路径为空！")
+                return
+
+            work_dir = os.path.dirname(tool_path)
+            ext = os.path.splitext(tool_path)[1].lower()
+
+            env_path = None
+            if ext in ('.py', '.jar'):
+                env_names = [e.get("display_name") for e in self.environments if isinstance(e, dict)]
+                env_names = [n for n in env_names if n]
+                if not env_names:
+                    QMessageBox.warning(self, "错误", "请先添加运行环境！")
+                    return
+
+                env_dialog = EnvironmentSelectionDialog(
+                    parent=self,
+                    environments=env_names,
+                    env_details=self.environments,
+                    title="选择运行环境"
+                )
+
+                if env_dialog.exec_() != QDialog.Accepted:
+                    return
+
                 env_name = env_dialog.get_selected_environment()
                 if not env_name:
                     return
-                
-                env_path = next(
-                    e["path"] for e in self.environments
-                    if e["display_name"] == env_name
-                )
-            else:
-                return
 
-        cmd = self.build_command(tool_path, ext, env_path)
-        self.execute_command(cmd, work_dir)
+                env_path = next((e.get("path") for e in self.environments
+                                 if e.get("display_name") == env_name), None)
+                if not env_path:
+                    QMessageBox.warning(self, "错误", "环境路径无效！")
+                    return
+
+            cmd = self.build_command(tool_path, ext, env_path)
+            self.execute_command(cmd, work_dir)
+
+        except Exception as e:
+            logger.exception("run_tool 崩溃")
+            QMessageBox.critical(self, "运行失败", f"{type(e).__name__}: {e}")
+
 
     def build_command(self, tool_path, ext, env_path=None):
         safe_tool_path = f'"{tool_path}"' if " " in tool_path else tool_path
@@ -3394,8 +3414,7 @@ class ToolManagerApp(QMainWindow):
 
     def execute_command(self, command, work_dir):
         try:
-            safe_work_dir = f'"{work_dir}"' if " " in work_dir else work_dir
-            full_cmd = f'start "Tool Runner" cmd /k "cd /d "{work_dir}" && {command}"'
+            full_cmd = f'start "Tool Runner" cmd /k "cd /d \"{work_dir}\" && {command}"'
             subprocess.Popen(
                 full_cmd,
                 shell=True,
@@ -3407,11 +3426,16 @@ class ToolManagerApp(QMainWindow):
             QMessageBox.critical(self, "错误", f"执行失败: {str(e)}")
 
     def open_shortcut(self, item):
-        shortcut = next(
-            (s for s in self.shortcut_dirs 
-             if s["display_name"] == item.text()),
-            None
-        )
+        sc_data = item.data(Qt.UserRole + 1) if item.data(Qt.UserRole + 1) else None
+        if isinstance(sc_data, dict):
+            shortcut = sc_data
+        else:
+            name = item.text()
+            shortcut = next(
+                (s for s in self.shortcut_dirs
+                 if s["display_name"] == name),
+                None
+            )
         if not shortcut: return
 
         path = shortcut["path"]
@@ -3446,20 +3470,14 @@ class ToolManagerApp(QMainWindow):
 
     def open_tool_directory(self):
         if item := self.tool_list.currentItem():
-            if self.search_keyword:
-                category = item.data(Qt.UserRole)
+            tool_data = item.data(Qt.UserRole + 1)
+            if not isinstance(tool_data, dict):
+                return
+            path = os.path.dirname(tool_data.get("path", ""))
+            if path and os.path.exists(path):
+                os.startfile(path)
             else:
-                if not (current := self.category_list.currentItem()):
-                    QMessageBox.warning(self, "错误", "请先选择分类！")
-                    return
-                category = current.text()
-            
-            tool = next(
-                t for t in self.categories[category]
-                if t["display_name"] == item.text()
-            )
-            path = os.path.dirname(tool["path"])
-            os.startfile(path) if os.path.exists(path) else QMessageBox.warning(self, "错误", "路径不存在！")
+                QMessageBox.warning(self, "错误", "路径不存在！")
 
     def setup_connections(self):
         self.search_input.textChanged.connect(self.perform_search)
@@ -3593,6 +3611,47 @@ class ToolManagerApp(QMainWindow):
         else:
             self.setCursor(Qt.ArrowCursor)
 
+    def _refresh_inline_styles(self):
+        """主题变更后刷新内联样式"""
+        t = THEMES.get(CURRENT_THEME, THEMES["浅色"])
+        fs = CURRENT_FONT_SIZE
+
+        # 分类列表
+        if hasattr(self, "category_list"):
+            self.category_list.setStyleSheet(f"""
+                QListWidget{{background:{t['list_bg']};border:1px solid {t['list_border']};border-radius:8px;padding:4px;}}
+                QListWidget::item{{border-radius:5px;padding:5px 8px;color:{t['text_sub']};font-size:{fs}px;}}
+                QListWidget::item:hover{{background:{t['item_hover']};color:{t['text']};}}
+                QListWidget::item:selected{{background:{t['item_sel']};color:{t['item_sel_text']};font-weight:600;}}
+                QListWidget::item:selected:active{{background:{t['item_sel']};color:{t['item_sel_text']};}}
+            """)
+
+        # 搜索输入框边框色
+        search_input_style = f"""
+            QLineEdit{{background:{t['input_bg']};border:1px solid {t['input_border']};border-radius:5px;
+                padding:2px 8px;font-size:12px;}}
+        """
+        if hasattr(self, "category_search_input"):
+            self.category_search_input.setStyleSheet(search_input_style)
+
+        # 分类增删按钮
+        if hasattr(self, "add_cat_btn"):
+            self.add_cat_btn.setStyleSheet(f"""
+                QPushButton{{background:{t['primary']};border:none;border-radius:4px;
+                    color:{t['primary_text']};font-size:16px;font-weight:700;padding:0;}}
+                QPushButton:hover{{background:{t['primary_hover']};}}
+            """)
+        if hasattr(self, "del_cat_btn"):
+            self.del_cat_btn.setStyleSheet(f"""
+                QPushButton{{background:{t['danger_bg']};border:none;border-radius:4px;
+                    color:{t['danger_text']};font-size:16px;font-weight:700;padding:0;}}
+                QPushButton:hover{{background:{t['danger_hover']};}}
+            """)
+
+        # 分隔条
+        for splitter in self.findChildren(QSplitter):
+            splitter.setStyleSheet(f"QSplitter::handle{{background:{t['sep']}; width:1px;}}")
+
     def restore_window_geometry(self):
         settings = QSettings("TBox", "TBox")
         geometry = settings.value("window_geometry")
@@ -3622,7 +3681,6 @@ if __name__ == "__main__":
         
         # 创建应用程序实例
         app = QApplication(sys.argv)
-        app.setStyleSheet(STYLE_SHEET)
         app.setStyle("Fusion")
         app.setQuitOnLastWindowClosed(False)
         app.setWindowIcon(QIcon(resource_path("icon.png"))) 
